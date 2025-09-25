@@ -27,6 +27,138 @@ class WorkflowSystem {
         register_activation_hook(__FILE__, array($this, 'activate'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
     }
+
+    public function get_default_status_settings() {
+        return array(
+            'pending' => array(
+                'label' => __('Beklemede', 'workflow-system'),
+                'color' => '#f59e0b',
+                'bg'    => '#fef3c7',
+            ),
+            'processing' => array(
+                'label' => __('İşleniyor', 'workflow-system'),
+                'color' => '#3b82f6',
+                'bg'    => '#dbeafe',
+            ),
+            'approved' => array(
+                'label' => __('Onaylandı', 'workflow-system'),
+                'color' => '#10b981',
+                'bg'    => '#d1fae5',
+            ),
+            'rejected' => array(
+                'label' => __('Reddedildi', 'workflow-system'),
+                'color' => '#ef4444',
+                'bg'    => '#fee2e2',
+            ),
+            'completed' => array(
+                'label' => __('Tamamlandı', 'workflow-system'),
+                'color' => '#8b5cf6',
+                'bg'    => '#ede9fe',
+            ),
+        );
+    }
+
+    public function get_status_settings() {
+        $saved = get_option('wfs_status_settings', array());
+
+        if (!is_array($saved)) {
+            $saved = array();
+        }
+
+        $defaults = $this->get_default_status_settings();
+
+        if (empty($saved)) {
+            return $defaults;
+        }
+
+        // Normalize saved statuses
+        $normalized = array();
+        foreach ($saved as $key => $config) {
+            $slug = sanitize_key($key);
+            if (empty($slug)) {
+                continue;
+            }
+
+            $color = isset($config['color']) ? sanitize_hex_color($config['color']) : '';
+            $bg    = isset($config['bg']) ? sanitize_hex_color($config['bg']) : '';
+
+            if (!$color) {
+                $color = $defaults[$slug]['color'] ?? '#3b82f6';
+            }
+
+            if (!$bg) {
+                $bg = $defaults[$slug]['bg'] ?? '#dbeafe';
+            }
+
+            $normalized[$slug] = array(
+                'label' => isset($config['label']) ? sanitize_text_field($config['label']) : ($defaults[$slug]['label'] ?? ucfirst($slug)),
+                'color' => $color,
+                'bg'    => $bg,
+            );
+        }
+
+        if (empty($normalized)) {
+            return $defaults;
+        }
+
+        return $normalized;
+    }
+
+    public function get_assignable_users() {
+        return get_users(array(
+            'role__in' => array(
+                'administrator',
+                'wfs_superadmin',
+                'wfs_representative',
+                'wfs_consultant',
+                'editor',
+            ),
+            'orderby' => 'display_name',
+            'order'   => 'ASC',
+        ));
+    }
+
+    private function save_form_submission($record_id, $form_values) {
+        global $wpdb;
+
+        if (empty($record_id)) {
+            return;
+        }
+
+        if (!is_array($form_values)) {
+            $form_values = array();
+        }
+
+        $table = $wpdb->prefix . 'wfs_form_submissions';
+
+        $data = array(
+            'record_id' => intval($record_id),
+            'form_data' => wp_json_encode($form_values),
+            'updated_at' => current_time('mysql'),
+        );
+
+        $existing_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE record_id = %d",
+            $record_id
+        ));
+
+        if ($existing_id) {
+            $wpdb->update(
+                $table,
+                $data,
+                array('id' => intval($existing_id)),
+                array('%d', '%s', '%s'),
+                array('%d')
+            );
+        } else {
+            $data['created_at'] = current_time('mysql');
+            $wpdb->insert(
+                $table,
+                $data,
+                array('%d', '%s', '%s', '%s')
+            );
+        }
+    }
     
     public function init() {
         // Çevirileri yükle
@@ -43,9 +175,10 @@ class WorkflowSystem {
         if (is_admin()) {
             add_action('admin_menu', array($this, 'admin_menu'));
             add_action('admin_enqueue_scripts', array($this, 'admin_scripts'));
-            add_action('wp_ajax_wfs_get_records', array($this, 'ajax_get_records'));
-            add_action('wp_ajax_wfs_update_status', array($this, 'ajax_update_status'));
-            add_action('wp_ajax_wfs_assign_record', array($this, 'ajax_assign_record'));
+        add_action('wp_ajax_wfs_get_records', array($this, 'ajax_get_records'));
+        add_action('wp_ajax_wfs_update_file_status', array($this, 'ajax_update_file_status'));
+        add_action('wp_ajax_wfs_update_record_status', array($this, 'ajax_update_record_status'));
+        add_action('wp_ajax_wfs_assign_record', array($this, 'ajax_assign_record'));
             
         }
         
@@ -134,11 +267,24 @@ class WorkflowSystem {
             KEY record_id (record_id),
             KEY user_id (user_id)
         ) $charset_collate;";
-        
+
+        // Form submission data tablosu
+        $table_form_submissions = $wpdb->prefix . 'wfs_form_submissions';
+        $sql_form_submissions = "CREATE TABLE $table_form_submissions (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            record_id mediumint(9) NOT NULL,
+            form_data longtext NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY record_id (record_id)
+        ) $charset_collate;";
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_records);
         dbDelta($sql_files);
         dbDelta($sql_activities);
+        dbDelta($sql_form_submissions);
     }
     
     public function create_custom_roles() {
@@ -312,10 +458,15 @@ class WorkflowSystem {
             'nonce' => wp_create_nonce('wfs_nonce'),
             'form_nonce' => wp_create_nonce('wfs_form_nonce'),
             'custom_form_nonce' => wp_create_nonce('wfs_custom_form_nonce'),
+            'statuses' => $this->get_status_settings(),
+            'filters_base_url' => esc_url(admin_url('admin.php?page=workflow-system')),
             'strings' => array(
                 'confirm_assign' => __('Bu kaydı atamak istediğinizden emin misiniz?', 'workflow-system'),
                 'success' => __('İşlem başarılı', 'workflow-system'),
-                'error' => __('Bir hata oluştu', 'workflow-system')
+                'error' => __('Bir hata oluştu', 'workflow-system'),
+                'assignment_success' => __('Kayıt başarıyla atandı', 'workflow-system'),
+                'assignment_none' => __('Henüz atama yapılmadı.', 'workflow-system'),
+                'status_success' => __('Statü başarıyla güncellendi', 'workflow-system')
             )
         ));
     }
@@ -354,12 +505,15 @@ class WorkflowSystem {
         }
         
         $record_id = $wpdb->insert_id;
-        
+
         // Dosya yüklemelerini işle
         if (isset($_FILES) && !empty($_FILES)) {
             $this->handle_file_uploads($record_id, $_FILES);
         }
-        
+
+        // Form yanıtlarını kaydet
+        $this->save_form_submission($record_id, $data);
+
         // Aktivite kaydı
         $this->log_activity($record_id, 0, 'record_created', 'Yeni kayıt oluşturuldu');
     }
@@ -511,12 +665,12 @@ class WorkflowSystem {
         wp_send_json_success($results);
     }
     
-    public function ajax_update_status() {
+    public function ajax_update_file_status() {
         if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
             wp_send_json_error('Güvenlik hatası');
             return;
         }
-        
+
         global $wpdb;
         
         $file_id = intval($_POST['file_id'] ?? 0);
@@ -545,7 +699,7 @@ class WorkflowSystem {
             // Aktivite kaydı
             $file = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}wfs_files WHERE id = %d", $file_id));
             if ($file) {
-                $this->log_activity($file->record_id, get_current_user_id(), 'file_status_updated', 
+                $this->log_activity($file->record_id, get_current_user_id(), 'file_status_updated',
                     "Dosya statüsü güncellendi: {$file->file_name}", '', $status);
             }
             
@@ -569,54 +723,150 @@ class WorkflowSystem {
         "SELECT * FROM {$wpdb->prefix}wfs_records WHERE id = %d",
         $record_id
     ));
-    
+
     if (!$record) {
         wp_send_json_error('Kayıt bulunamadı');
         return;
     }
-    
+
     // Dosyaları getir
     $files = $wpdb->get_results($wpdb->prepare(
         "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d ORDER BY uploaded_at DESC",
         $record_id
     ));
-    
+
+    $form_submission = $wpdb->get_var($wpdb->prepare(
+        "SELECT form_data FROM {$wpdb->prefix}wfs_form_submissions WHERE record_id = %d",
+        $record_id
+    ));
+
+    $decoded_form_data = array();
+    if ($form_submission) {
+        $decoded_form_data = json_decode($form_submission, true);
+        if (!is_array($decoded_form_data)) {
+            $decoded_form_data = array();
+        }
+    }
+
     wp_send_json_success(array(
-        'record' => $record,
-        'files' => $files
+        'record'      => $record,
+        'files'       => $files,
+        'form_values' => $decoded_form_data,
     ));
 }
+
+    public function ajax_update_record_status() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
+
+        $record_id = intval($_POST['record_id'] ?? 0);
+        $status     = sanitize_key($_POST['status'] ?? '');
+
+        if (!$record_id) {
+            wp_send_json_error('Kayıt bulunamadı');
+            return;
+        }
+
+        $statuses = $this->get_status_settings();
+
+        if (!isset($statuses[$status])) {
+            wp_send_json_error('Geçersiz statü');
+            return;
+        }
+
+        $updated = $wpdb->update(
+            $wpdb->prefix . 'wfs_records',
+            array(
+                'overall_status' => $status,
+                'updated_at'     => current_time('mysql'),
+            ),
+            array('id' => $record_id),
+            array('%s', '%s'),
+            array('%d')
+        );
+
+        if ($updated === false) {
+            wp_send_json_error('Statü güncellenemedi: ' . $wpdb->last_error);
+            return;
+        }
+
+        $this->log_activity(
+            $record_id,
+            get_current_user_id(),
+            'record_status_updated',
+            'Kayıt statüsü güncellendi',
+            '',
+            $status
+        );
+
+        wp_send_json_success(array(
+            'status' => $status,
+            'label'  => $statuses[$status]['label'],
+            'color'  => $statuses[$status]['color'],
+            'bg'     => $statuses[$status]['bg'],
+        ));
+    }
     public function ajax_assign_record() {
         if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
             wp_send_json_error('Güvenlik hatası');
             return;
         }
-        
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
         global $wpdb;
-        
+
         $record_id = intval($_POST['record_id'] ?? 0);
         $assigned_to = intval($_POST['assigned_to'] ?? 0);
-        
+
+        if (!$record_id || !$assigned_to) {
+            wp_send_json_error('Eksik bilgi');
+            return;
+        }
+
+        $user = get_user_by('id', $assigned_to);
+        if (!$user) {
+            wp_send_json_error('Kullanıcı bulunamadı');
+            return;
+        }
+
         $result = $wpdb->update(
             $wpdb->prefix . 'wfs_records',
-            array('assigned_to' => $assigned_to),
+            array(
+                'assigned_to' => $assigned_to,
+                'updated_at'  => current_time('mysql'),
+            ),
             array('id' => $record_id),
-            array('%d'),
+            array('%d', '%s'),
             array('%d')
         );
         
         if ($result !== false) {
             // E-posta gönder
             $this->send_assignment_email($record_id, $assigned_to);
-            
+
             // Aktivite kaydı
             $assigned_user = get_user_by('id', $assigned_to);
             if ($assigned_user) {
-                $this->log_activity($record_id, get_current_user_id(), 'record_assigned', 
+                $this->log_activity($record_id, get_current_user_id(), 'record_assigned',
                     "Kayıt atandı: {$assigned_user->display_name}");
             }
-            
-            wp_send_json_success('Kayıt atandı');
+
+            wp_send_json_success(array(
+                'assigned_name' => $assigned_user ? $assigned_user->display_name : '',
+            ));
         } else {
             wp_send_json_error('Atama hatası: ' . $wpdb->last_error);
         }
@@ -632,11 +882,19 @@ class WorkflowSystem {
         $user = get_user_by('id', $assigned_to);
         
         if ($record && $user) {
-            $subject = sprintf(__('Size yeni bir talep atandı: %s %s', 'workflow-system'), 
+            $subject = sprintf(__('Size yeni bir talep atandı: %s %s', 'workflow-system'),
                 $record->first_name, $record->last_name);
-            
+
+            $record_url = add_query_arg(
+                array(
+                    'page'     => 'workflow-system',
+                    'record'   => $record_id,
+                ),
+                admin_url('admin.php')
+            );
+
             $message = sprintf(
-                __("Merhaba %s,\n\nSize yeni bir talep atandı:\n\nAd Soyad: %s %s\nE-posta: %s\nTelefon: %s\nEğitim Durumu: %s\nBölüm: %s\nYaş: %s\n\nLütfen sisteme giriş yaparak talebi inceleyin.\n\nTeşekkürler", 'workflow-system'),
+                __("Merhaba %s,\n\nSize yeni bir talep atandı:\n\nAd Soyad: %s %s\nE-posta: %s\nTelefon: %s\nEğitim Durumu: %s\nBölüm: %s\nYaş: %s\n\nKaydı görüntülemek için: %s\n\nLütfen sisteme giriş yaparak talebi inceleyin.\n\nTeşekkürler", 'workflow-system'),
                 $user->display_name,
                 $record->first_name,
                 $record->last_name,
@@ -644,9 +902,10 @@ class WorkflowSystem {
                 $record->phone,
                 $record->education_level,
                 $record->department,
-                $record->age
+                $record->age,
+                esc_url_raw($record_url)
             );
-            
+
             wp_mail($user->user_email, $subject, $message);
         }
     }
@@ -748,34 +1007,53 @@ class WorkflowSystem {
             'overall_status' => 'pending'
         );
         
+        $submission_values = array();
+
         // Form alanlarından verileri çıkar
         foreach ($form_config['fields'] as $field) {
             $field_name = 'field_' . $field['id'];
             $value = '';
-            
-            if (isset($_POST[$field_name])) {
+
+            if ($field['type'] === 'file' && isset($_FILES[$field_name])) {
+                $file_names = $_FILES[$field_name]['name'];
+                if (is_array($file_names)) {
+                    $sanitized_files = array();
+                    foreach ($file_names as $file_name) {
+                        if ($file_name !== '') {
+                            $sanitized_files[] = sanitize_file_name($file_name);
+                        }
+                    }
+                    $value = $sanitized_files;
+                } elseif (!empty($file_names)) {
+                    $value = sanitize_file_name($file_names);
+                }
+            } elseif (isset($_POST[$field_name])) {
                 if (is_array($_POST[$field_name])) {
-                    $value = implode(', ', array_map('sanitize_text_field', $_POST[$field_name]));
+                    $value = array_map('sanitize_text_field', $_POST[$field_name]);
                 } else {
                     $value = sanitize_text_field($_POST[$field_name]);
                 }
             }
-            
+
+            $submission_values[$field_name] = $value;
+
+            $scalar_value = is_array($value) ? implode(', ', $value) : $value;
+
             // Form alanlarını veritabanı alanlarına eşleştir
             if (stripos($field['label'], 'ad') !== false && stripos($field['label'], 'soyad') === false) {
-                $record_data['first_name'] = $value;
+                $record_data['first_name'] = $scalar_value;
             } elseif (stripos($field['label'], 'soyad') !== false) {
-                $record_data['last_name'] = $value;
+                $record_data['last_name'] = $scalar_value;
             } elseif (stripos($field['label'], 'email') !== false || stripos($field['label'], 'e-posta') !== false) {
-                $record_data['email'] = sanitize_email($value);
+                $record_data['email'] = sanitize_email($scalar_value);
             } elseif (stripos($field['label'], 'telefon') !== false) {
-                $record_data['phone'] = $value;
+                $record_data['phone'] = $scalar_value;
             } elseif (stripos($field['label'], 'eğitim') !== false) {
-                $record_data['education_level'] = $value;
+                $record_data['education_level'] = $scalar_value;
             } elseif (stripos($field['label'], 'bölüm') !== false || stripos($field['label'], 'department') !== false) {
-                $record_data['department'] = $value;
+                $record_data['department'] = $scalar_value;
             } elseif (stripos($field['label'], 'yaş') !== false) {
-                $record_data['age'] = is_numeric($value) ? intval($value) : null;
+                $record_data['age'] = is_numeric($scalar_value) ? intval($scalar_value) : null;
             }
         }
         
@@ -784,16 +1062,18 @@ class WorkflowSystem {
         
         if ($result) {
             $record_id = $wpdb->insert_id;
-            
+
             // Dosya yükleme işle
             if (!empty($_FILES)) {
                 $this->handle_file_uploads($record_id, $_FILES);
             }
-            
+
+            $this->save_form_submission($record_id, $submission_values);
+
             // Aktivite kaydı
             $user_id = get_current_user_id();
             $this->log_activity($record_id, $user_id, 'record_created', 'Özel form ile kayıt oluşturuldu');
-            
+
             wp_send_json_success('Kayıt başarıyla eklendi');
         } else {
             wp_send_json_error('Kayıt eklenirken hata oluştu: ' . $wpdb->last_error);
@@ -802,6 +1082,57 @@ class WorkflowSystem {
     
     // Sayfa fonksiyonları
     public function admin_page() {
+        global $wpdb;
+
+        $status_settings = $this->get_status_settings();
+        $assignable_users = $this->get_assignable_users();
+
+        $search_term = isset($_GET['wfs_search']) ? sanitize_text_field(wp_unslash($_GET['wfs_search'])) : '';
+        $status_filter = isset($_GET['wfs_status']) ? sanitize_key(wp_unslash($_GET['wfs_status'])) : '';
+        $representative_filter = isset($_GET['wfs_rep']) ? intval($_GET['wfs_rep']) : 0;
+
+        $conditions = array('1=1');
+        $values     = array();
+
+        if ($search_term !== '') {
+            $like = '%' . $wpdb->esc_like($search_term) . '%';
+            $conditions[] = '(r.first_name LIKE %s OR r.last_name LIKE %s OR r.email LIKE %s)';
+            $values[] = $like;
+            $values[] = $like;
+            $values[] = $like;
+        }
+
+        if ($status_filter !== '' && isset($status_settings[$status_filter])) {
+            $conditions[] = 'r.overall_status = %s';
+            $values[] = $status_filter;
+        }
+
+        if ($representative_filter > 0) {
+            $conditions[] = 'r.assigned_to = %d';
+            $values[] = $representative_filter;
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        $sql = "SELECT r.*, u.display_name AS assigned_name
+            FROM {$wpdb->prefix}wfs_records r
+            LEFT JOIN {$wpdb->users} u ON u.ID = r.assigned_to
+            WHERE {$where_clause}
+            ORDER BY r.created_at DESC
+            LIMIT 50";
+
+        if (!empty($values)) {
+            $sql = $wpdb->prepare($sql, $values);
+        }
+
+        $records = $wpdb->get_results($sql);
+
+        $active_filters = array(
+            'search' => $search_term,
+            'status' => $status_filter,
+            'rep'    => $representative_filter,
+        );
+
         $template_path = WFS_PLUGIN_PATH . 'templates/admin-page.php';
         if (file_exists($template_path)) {
             include $template_path;
@@ -828,6 +1159,8 @@ class WorkflowSystem {
             echo '<div class="notice notice-success"><p>' . __('Ayarlar kaydedildi.', 'workflow-system') . '</p></div>';
         }
         
+        $status_settings = $this->get_status_settings();
+
         $template_path = WFS_PLUGIN_PATH . 'templates/settings-page.php';
         if (file_exists($template_path)) {
             include $template_path;

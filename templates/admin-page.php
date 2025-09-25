@@ -7,31 +7,62 @@ global $wpdb;
 // Özel formu getir
 $custom_form_data = get_option('wfs_custom_form', '{"fields":[]}');
 $custom_form = json_decode($custom_form_data, true);
+if (!is_array($custom_form)) {
+    $custom_form = array('fields' => array(), 'settings' => array());
+}
 $has_custom_form = !empty($custom_form['fields']);
 
-// Test verisi ekle (geliştirme amaçlı)
-$test_records = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}wfs_records LIMIT 5");
+$records = isset($records) && is_array($records) ? $records : array();
+$status_settings = isset($status_settings) && is_array($status_settings) ? $status_settings : array();
+$assignable_users = isset($assignable_users) && is_array($assignable_users) ? $assignable_users : array();
+$active_filters = isset($active_filters) && is_array($active_filters)
+    ? wp_parse_args($active_filters, array('search' => '', 'status' => '', 'rep' => 0))
+    : array('search' => '', 'status' => '', 'rep' => 0);
 
-// Eğer veri yoksa test verisi oluştur
-if (empty($test_records)) {
-    // Test verisi ekleme
-    $wpdb->insert($wpdb->prefix . 'wfs_records', array(
-        'fluent_form_id' => 1,
-        'submission_id' => 1,
-        'first_name' => 'Test',
-        'last_name' => 'Kullanıcı',
-        'email' => 'test@example.com',
-        'phone' => '+90 555 123 45 67',
-        'education_level' => 'Lisans',
-        'department' => 'Bilgisayar Mühendisliği',
-        'age' => 25,
-        'overall_status' => 'pending'
-    ));
-    
-    $test_records = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}wfs_records LIMIT 5");
+if (empty($status_settings)) {
+    $status_settings = array(
+        'pending' => array('label' => __('Beklemede', 'workflow-system'), 'color' => '#f59e0b', 'bg' => '#fef3c7'),
+    );
 }
 
-$representatives = get_users(array('role__in' => array('administrator', 'wfs_representative', 'wfs_superadmin')));
+if (!function_exists('wfs_get_status_config')) {
+    function wfs_get_status_config($status_key, $statuses) {
+        $default = reset($statuses);
+        return $statuses[$status_key] ?? $default;
+    }
+}
+
+if (!function_exists('wfs_display_record_details')) {
+    function wfs_display_record_details($record, $custom_form, $status_settings, $assignable_users) {
+        global $wpdb;
+
+        $submission_data = array();
+
+        $form_data = $wpdb->get_var($wpdb->prepare(
+            "SELECT form_data FROM {$wpdb->prefix}wfs_form_submissions WHERE record_id = %d",
+            $record->id
+        ));
+
+        if ($form_data) {
+            $decoded = json_decode($form_data, true);
+            if (is_array($decoded)) {
+                $submission_data = $decoded;
+            }
+        }
+
+        $files = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d ORDER BY uploaded_at DESC",
+            $record->id
+        ));
+
+        $status_config = wfs_get_status_config($record->overall_status, $status_settings);
+
+        include WFS_PLUGIN_PATH . 'templates/partials/record-details.php';
+    }
+}
+
+// Temsilci filtre listesi
+$representatives = $assignable_users;
 ?>
 
 <div class="wrap">
@@ -45,25 +76,25 @@ $representatives = get_users(array('role__in' => array('administrator', 'wfs_rep
     <div class="wfs-filters-container">
         <div class="wfs-filter-item">
             <label>🔍 Arama</label>
-            <input type="text" id="wfs-search" placeholder="Ad, soyad veya e-posta ile arayın..." class="wfs-input">
+            <input type="text" id="wfs-search" placeholder="Ad, soyad veya e-posta ile arayın..." class="wfs-input" value="<?php echo esc_attr($active_filters['search']); ?>">
         </div>
         
         <div class="wfs-filter-item">
             <label>📊 Statü</label>
             <select id="wfs-status-filter" class="wfs-select">
                 <option value="">Tüm Statüler</option>
-                <option value="pending">Beklemede</option>
-                <option value="approved">Onaylandı</option>
-                <option value="rejected">Reddedildi</option>
+                <?php foreach ($status_settings as $status_key => $status_info): ?>
+                    <option value="<?php echo esc_attr($status_key); ?>" <?php selected($active_filters['status'], $status_key); ?>><?php echo esc_html($status_info['label']); ?></option>
+                <?php endforeach; ?>
             </select>
         </div>
-        
+
         <div class="wfs-filter-item">
             <label>👤 Temsilci</label>
             <select id="wfs-rep-filter" class="wfs-select">
                 <option value="">Tüm Temsilciler</option>
                 <?php foreach ($representatives as $rep): ?>
-                    <option value="<?php echo $rep->ID; ?>"><?php echo esc_html($rep->display_name); ?></option>
+                    <option value="<?php echo esc_attr($rep->ID); ?>" <?php selected(intval($active_filters['rep']), $rep->ID); ?>><?php echo esc_html($rep->display_name); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -180,280 +211,58 @@ $representatives = get_users(array('role__in' => array('administrator', 'wfs_rep
 
     <!-- Kayıtlar -->
     <div id="wfs-records-container" class="wfs-records">
-        <?php
-// templates/admin-page.php - Güncellenmiş kayıt görüntüleme kısmı
-// Bu kod bloğunu mevcut admin-page.php'deki kayıt kartları bölümüne ekleyin
-
-// Kayıt detaylarını gösterirken tüm form verilerini dinamik olarak göster
-function display_record_details($record, $custom_form) {
-    global $wpdb;
-    
-    // Form builder'dan kaydedilen verileri al
-    $submission_data = array();
-    
-    // Eğer custom form ile oluşturulmuşsa
-    if ($record->fluent_form_id == 0) {
-        // wp_wfs_form_submissions tablosundan verileri çek
-        $form_data = $wpdb->get_var($wpdb->prepare(
-            "SELECT form_data FROM {$wpdb->prefix}wfs_form_submissions WHERE record_id = %d",
-            $record->id
-        ));
-        
-        if ($form_data) {
-            $submission_data = json_decode($form_data, true);
-        }
-    }
-    ?>
-    
-    <div class="wfs-record-details" data-record-id="<?php echo $record->id; ?>" style="display: none;">
-        <div class="wfs-details-grid">
-            <!-- Standart Alanlar -->
-            <div class="wfs-info-section">
-                <h4>👤 Kişisel Bilgiler</h4>
-                <div class="wfs-info-list">
-                    <?php if (!empty($record->first_name)): ?>
-                        <div><strong>Ad:</strong> <?php echo esc_html($record->first_name); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->last_name)): ?>
-                        <div><strong>Soyad:</strong> <?php echo esc_html($record->last_name); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->email)): ?>
-                        <div><strong>📧 E-posta:</strong> <?php echo esc_html($record->email); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->phone)): ?>
-                        <div><strong>📞 Telefon:</strong> <?php echo esc_html($record->phone); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->age)): ?>
-                        <div><strong>🎂 Yaş:</strong> <?php echo esc_html($record->age); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->education_level)): ?>
-                        <div><strong>🎓 Eğitim:</strong> <?php echo esc_html($record->education_level); ?></div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($record->department)): ?>
-                        <div><strong>🏢 Bölüm:</strong> <?php echo esc_html($record->department); ?></div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Dinamik Form Alanları -->
-            <?php if (!empty($submission_data) && !empty($custom_form['fields'])): ?>
-                <div class="wfs-info-section">
-                    <h4>📝 Ek Bilgiler</h4>
-                    <div class="wfs-info-list">
-                        <?php 
-                        foreach ($custom_form['fields'] as $field):
-                            $field_key = 'field_' . $field['id'];
-                            if (isset($submission_data[$field_key]) && !empty($submission_data[$field_key])):
-                                // Standart alanları tekrar gösterme
-                                $skip_labels = ['ad', 'soyad', 'e-posta', 'email', 'telefon', 'yaş', 'eğitim', 'bölüm', 'department'];
-                                $should_skip = false;
-                                foreach ($skip_labels as $skip) {
-                                    if (stripos($field['label'], $skip) !== false) {
-                                        $should_skip = true;
-                                        break;
-                                    }
-                                }
-                                
-                                if (!$should_skip):
-                                    ?>
-                                    <div>
-                                        <strong><?php echo esc_html($field['label']); ?>:</strong>
-                                        <?php 
-                                        if (is_array($submission_data[$field_key])) {
-                                            echo esc_html(implode(', ', $submission_data[$field_key]));
-                                        } else {
-                                            echo esc_html($submission_data[$field_key]);
-                                        }
-                                        ?>
-                                    </div>
-                                    <?php
-                                endif;
-                            endif;
-                        endforeach;
-                        ?>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Atama -->
-            <div class="wfs-info-section">
-                <h4>🎯 Atama</h4>
-                <?php 
-                // Tüm workflow rollerini getir
-                $assignable_users = get_users(array(
-                    'role__in' => array(
-                        'administrator',
-                        'wfs_superadmin',
-                        'wfs_representative', 
-                        'wfs_consultant',
-                        'editor' // Editor rolü de ekleyelim
-                    ),
-                    'orderby' => 'display_name',
-                    'order' => 'ASC'
-                ));
+        <?php if (!empty($records)): ?>
+            <?php foreach ($records as $record): ?>
+                <?php
+                $first_initial = $record->first_name ? mb_substr($record->first_name, 0, 1) : '';
+                $last_initial = $record->last_name ? mb_substr($record->last_name, 0, 1) : '';
+                $initials = strtoupper($first_initial . $last_initial);
+                $status_config = wfs_get_status_config($record->overall_status, $status_settings);
+                $assigned_display = $record->assigned_name ? esc_html($record->assigned_name) : __('Henüz atama yapılmadı.', 'workflow-system');
                 ?>
-                
-                <?php if ($record->assigned_to): ?>
-                    <?php $assigned_user = get_user_by('id', $record->assigned_to); ?>
-                    <div class="wfs-assigned-info">
-                        <strong>Atanan:</strong> <?php echo $assigned_user ? esc_html($assigned_user->display_name) : 'Bilinmiyor'; ?>
-                    </div>
-                <?php endif; ?>
-                
-                <?php if (current_user_can('manage_options') || current_user_can('wfs_assign_records')): ?>
-                    <div class="wfs-assign-form">
-                        <select class="wfs-assign-select wfs-select" data-record-id="<?php echo $record->id; ?>">
-                            <option value="">Kullanıcı Seçin</option>
-                            <?php foreach ($assignable_users as $user): ?>
-                                <?php 
-                                $role_names = array(
-                                    'administrator' => 'Admin',
-                                    'wfs_superadmin' => 'Süperadmin',
-                                    'wfs_representative' => 'Temsilci',
-                                    'wfs_consultant' => 'Danışan',
-                                    'editor' => 'Editör'
-                                );
-                                $user_role_display = '';
-                                foreach ($user->roles as $role) {
-                                    if (isset($role_names[$role])) {
-                                        $user_role_display = $role_names[$role];
-                                        break;
-                                    }
-                                }
-                                ?>
-                                <option value="<?php echo $user->ID; ?>" <?php selected($record->assigned_to, $user->ID); ?>>
-                                    <?php echo esc_html($user->display_name); ?> (<?php echo $user_role_display; ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button class="wfs-assign-btn wfs-btn wfs-btn-primary" data-record-id="<?php echo $record->id; ?>">
-                            Ata
-                        </button>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Statü Yönetimi -->
-            <div class="wfs-info-section">
-                <h4>📊 Statü</h4>
-                <?php 
-                // Statüleri ayarlardan al
-                $status_settings = get_option('wfs_status_settings', array(
-                    'pending' => array('label' => 'Beklemede', 'color' => '#f59e0b', 'bg' => '#fef3c7'),
-                    'approved' => array('label' => 'Onaylandı', 'color' => '#10b981', 'bg' => '#d1fae5'),
-                    'rejected' => array('label' => 'Reddedildi', 'color' => '#ef4444', 'bg' => '#fee2e2'),
-                    'processing' => array('label' => 'İşleniyor', 'color' => '#3b82f6', 'bg' => '#dbeafe'),
-                    'completed' => array('label' => 'Tamamlandı', 'color' => '#8b5cf6', 'bg' => '#ede9fe')
-                ));
-                ?>
-                
-                <div class="wfs-current-status" style="margin-bottom: 1rem;">
-                    <strong>Mevcut Statü:</strong>
-                    <span class="wfs-status-badge" style="background: <?php echo $status_settings[$record->overall_status]['bg']; ?>; color: <?php echo $status_settings[$record->overall_status]['color']; ?>;">
-                        <span class="wfs-status-light" style="background: <?php echo $status_settings[$record->overall_status]['color']; ?>;"></span>
-                        <?php echo $status_settings[$record->overall_status]['label']; ?>
-                    </span>
-                </div>
-                
-                <?php if (current_user_can('manage_options') || current_user_can('wfs_update_status')): ?>
-                    <div class="wfs-status-update">
-                        <select class="wfs-status-select wfs-select" data-record-id="<?php echo $record->id; ?>">
-                            <?php foreach ($status_settings as $status_key => $status_info): ?>
-                                <option value="<?php echo $status_key; ?>" <?php selected($record->overall_status, $status_key); ?>>
-                                    <?php echo esc_html($status_info['label']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button class="wfs-update-status-btn wfs-btn wfs-btn-primary" data-record-id="<?php echo $record->id; ?>">
-                            Statü Güncelle
-                        </button>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Tarihler -->
-            <div class="wfs-info-section">
-                <h4>📅 Tarihler</h4>
-                <div class="wfs-info-list">
-                    <div><strong>Oluşturulma:</strong> <?php echo date('d.m.Y H:i', strtotime($record->created_at)); ?></div>
-                    <div><strong>Güncellenme:</strong> <?php echo date('d.m.Y H:i', strtotime($record->updated_at)); ?></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Dosyalar -->
-        <div class="wfs-files-section">
-            <h4>📁 Yüklenen Dosyalar</h4>
-            <?php 
-            $files = $wpdb->get_results($wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d ORDER BY uploaded_at DESC",
-                $record->id
-            ));
-            
-            if (!empty($files)): 
-            ?>
-                <div class="wfs-files-grid">
-                    <?php foreach ($files as $file): ?>
-                        <?php 
-                        $file_url = str_replace(ABSPATH, home_url('/'), $file->file_path);
-                        $file_icon = '📄';
-                        if (strpos($file->file_type, 'image') !== false) $file_icon = '🖼️';
-                        elseif (strpos($file->file_type, 'pdf') !== false) $file_icon = '📑';
-                        
-                        $file_status_colors = array(
-                            'pending' => '#f59e0b',
-                            'approved' => '#10b981',
-                            'rejected' => '#ef4444'
-                        );
-                        ?>
-                        <div class="wfs-file-item" style="border: 1px solid #e5e7eb; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <span style="font-size: 1.5rem; margin-right: 0.5rem;"><?php echo $file_icon; ?></span>
-                                    <a href="<?php echo esc_url($file_url); ?>" target="_blank" style="color: #3b82f6; text-decoration: none;">
-                                        <?php echo esc_html($file->file_name); ?>
-                                    </a>
-                                    <span style="color: #6b7280; font-size: 0.875rem; margin-left: 0.5rem;">
-                                        (<?php echo round($file->file_size / 1024, 2); ?> KB)
-                                    </span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="padding: 0.25rem 0.75rem; background: <?php echo $file_status_colors[$file->status]; ?>20; color: <?php echo $file_status_colors[$file->status]; ?>; border-radius: 4px; font-size: 0.875rem;">
-                                        <?php echo ucfirst($file->status); ?>
-                                    </span>
-                                    <?php if (current_user_can('wfs_review_files')): ?>
-                                        <select class="wfs-file-status-select" data-file-id="<?php echo $file->id; ?>" style="padding: 0.25rem; border: 1px solid #d1d5db; border-radius: 4px;">
-                                            <option value="pending" <?php selected($file->status, 'pending'); ?>>Beklemede</option>
-                                            <option value="approved" <?php selected($file->status, 'approved'); ?>>Onayla</option>
-                                            <option value="rejected" <?php selected($file->status, 'rejected'); ?>>Reddet</option>
-                                        </select>
-                                    <?php endif; ?>
-                                </div>
+                <div class="wfs-record-card" data-record-id="<?php echo $record->id; ?>">
+                    <div class="wfs-card-header">
+                        <div class="wfs-user-info">
+                            <div class="wfs-avatar" aria-hidden="true">
+                                <?php echo esc_html($initials ?: '🗂️'); ?>
                             </div>
-                            <?php if ($file->review_notes): ?>
-                                <div style="margin-top: 0.5rem; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">
-                                    <small style="color: #6b7280;">Not: <?php echo esc_html($file->review_notes); ?></small>
-                                </div>
-                            <?php endif; ?>
+                            <div class="wfs-user-details">
+                                <h3 class="wfs-user-name">
+                                    <?php echo esc_html(trim($record->first_name . ' ' . $record->last_name)); ?>
+                                </h3>
+                                <?php if (!empty($record->email)): ?>
+                                    <p class="wfs-user-email"><?php echo esc_html($record->email); ?></p>
+                                <?php endif; ?>
+                                <?php if (!empty($record->phone)): ?>
+                                    <p class="wfs-user-phone">📞 <?php echo esc_html($record->phone); ?></p>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                    <?php endforeach; ?>
+                        <div class="wfs-card-actions">
+                            <div class="wfs-assignment-chip">
+                                <span class="wfs-assignment-icon" aria-hidden="true">🎯</span>
+                                <span class="wfs-assignment-label"><?php echo $assigned_display; ?></span>
+                            </div>
+                            <span class="wfs-status-badge" style="background: <?php echo esc_attr($status_config['bg']); ?>; color: <?php echo esc_attr($status_config['color']); ?>;">
+                                <span class="wfs-status-light" style="background: <?php echo esc_attr($status_config['color']); ?>;"></span>
+                                <span class="wfs-status-text"><?php echo esc_html($status_config['label']); ?></span>
+                            </span>
+                            <button class="wfs-btn-link wfs-toggle-details" data-record-id="<?php echo $record->id; ?>">
+                                <?php esc_html_e('Detaylar', 'workflow-system'); ?>
+                            </button>
+                        </div>
+                    </div>
+
+                    <?php wfs_display_record_details($record, $custom_form, $status_settings, $assignable_users); ?>
                 </div>
-            <?php else: ?>
-                <div class="wfs-no-files">
-                    <p>Bu kayıt için henüz dosya yüklenmemiş.</p>
-                </div>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php
-}
-?>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <div class="wfs-empty-state">
+                <div class="wfs-empty-icon">📋</div>
+                <h3><?php esc_html_e('Henüz kayıt yok', 'workflow-system'); ?></h3>
+                <p><?php esc_html_e('Yeni kayıt eklemek için formu kullanın.', 'workflow-system'); ?></p>
+            </div>
+        <?php endif; ?>
     </div>
 
     <!-- Toast Container -->
@@ -602,6 +411,28 @@ function display_record_details($record, $custom_form) {
     align-items: center;
     gap: 1rem;
 }
+.wfs-assignment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+.wfs-assignment-icon {
+    font-size: 1rem;
+}
+.wfs-assignment-label {
+    white-space: nowrap;
+}
+.wfs-user-phone {
+    margin: 0;
+    color: #4b5563;
+    font-size: 0.9rem;
+}
 
 .wfs-status-badge {
     display: inline-flex;
@@ -618,6 +449,10 @@ function display_record_details($record, $custom_form) {
     border-radius: 50%;
     margin-right: 0.5rem;
     animation: pulse 2s infinite;
+}
+.wfs-status-text {
+    display: inline-block;
+    margin-left: 0.25rem;
 }
 
 .wfs-btn-link {
@@ -646,6 +481,10 @@ function display_record_details($record, $custom_form) {
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 2rem;
     margin-bottom: 2rem;
+}
+.wfs-assigned-info.is-empty {
+    color: #9ca3af;
+    font-style: italic;
 }
 
 .wfs-info-section h4 {
@@ -698,6 +537,63 @@ function display_record_details($record, $custom_form) {
 .wfs-files-section {
     border-top: 1px solid #e5e7eb;
     padding-top: 1.5rem;
+}
+.wfs-files-grid {
+    display: grid;
+    gap: 1rem;
+}
+.wfs-file-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1rem;
+    background: #f9fafb;
+}
+.wfs-file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+.wfs-file-icon {
+    font-size: 1.5rem;
+    margin-right: 0.5rem;
+}
+.wfs-file-link {
+    color: #3b82f6;
+    font-weight: 500;
+    text-decoration: none;
+}
+.wfs-file-link:hover {
+    text-decoration: underline;
+}
+.wfs-file-meta {
+    margin-left: 0.5rem;
+    color: #6b7280;
+    font-size: 0.85rem;
+}
+.wfs-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.wfs-file-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+.wfs-file-status-select {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+.wfs-file-notes {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px dashed #d1d5db;
 }
 
 .wfs-files-section h4 {

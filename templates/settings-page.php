@@ -9,12 +9,49 @@ if (isset($_POST['save_permissions'])) {
     echo '<div class="notice notice-success"><p>Ayarlar kaydedildi!</p></div>';
 }
 
+if (isset($_POST['save_statuses']) && check_admin_referer('wfs_save_statuses')) {
+    $statuses_input = $_POST['statuses'] ?? array();
+    $sanitized_statuses = array();
+
+    if (is_array($statuses_input)) {
+        foreach ($statuses_input as $status) {
+            $slug  = isset($status['slug']) ? sanitize_key($status['slug']) : '';
+            $label = isset($status['label']) ? sanitize_text_field($status['label']) : '';
+            $color = isset($status['color']) ? sanitize_hex_color($status['color']) : '';
+            $bg    = isset($status['bg']) ? sanitize_hex_color($status['bg']) : '';
+
+            if (empty($slug) || empty($label)) {
+                continue;
+            }
+
+            if (!$color) {
+                $color = '#3b82f6';
+            }
+
+            if (!$bg) {
+                $bg = '#dbeafe';
+            }
+
+            $sanitized_statuses[$slug] = array(
+                'label' => $label,
+                'color' => $color,
+                'bg'    => $bg,
+            );
+        }
+    }
+
+    update_option('wfs_status_settings', $sanitized_statuses);
+    echo '<div class="notice notice-success"><p>Statüler güncellendi!</p></div>';
+}
+
 // Mevcut ayarları getir
 $hide_wp_menus = get_option('wfs_hide_wp_menus', false);
 $permissions = get_option('wfs_permissions', array());
 
 // Tüm kullanıcıları getir
 $all_users = get_users();
+
+$editable_statuses = isset($status_settings) && is_array($status_settings) ? $status_settings : array();
 ?>
 
 <div class="wrap">
@@ -1108,7 +1145,94 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
 
         <div id="status-management" class="tab-content" style="display: none; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-            <h2>🎯 Statü Yönetimi - Yakında...</h2>
+            <h2 style="margin: 0 0 1.5rem 0; color: #1f2937;">🎯 Statü Yönetimi</h2>
+            <p style="margin: 0 0 1.5rem 0; color: #4b5563;">Kayıt statülerini özelleştirin. Her statü için benzersiz bir anahtar belirleyin, renkleri seçin ve gerekirse yeni statüler ekleyin.</p>
+
+            <form method="post" id="wfs-status-form" style="display: grid; gap: 1.5rem;">
+                <?php wp_nonce_field('wfs_save_statuses'); ?>
+
+                <div style="overflow-x: auto;">
+                    <table class="wfs-status-table" style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: #f3f4f6;">
+                            <tr>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Etiket</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Anahtar</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Metin Rengi</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Arkaplan Rengi</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!empty($editable_statuses)): ?>
+                                <?php $row_index = 0; ?>
+                                <?php foreach ($editable_statuses as $slug => $config): ?>
+                                    <tr class="wfs-status-row" data-index="<?php echo esc_attr($row_index); ?>" style="border-bottom: 1px solid #e5e7eb;">
+                                        <td style="padding: 0.75rem;">
+                                            <input type="text" name="statuses[<?php echo esc_attr($row_index); ?>][label]" value="<?php echo esc_attr($config['label']); ?>" class="wfs-status-input" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;">
+                                        </td>
+                                        <td style="padding: 0.75rem;">
+                                            <input type="text" name="statuses[<?php echo esc_attr($row_index); ?>][slug]" value="<?php echo esc_attr($slug); ?>" class="wfs-status-slug" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;" required>
+                                        </td>
+                                        <td style="padding: 0.75rem; text-align: center;">
+                                            <input type="color" name="statuses[<?php echo esc_attr($row_index); ?>][color]" value="<?php echo esc_attr($config['color']); ?>" class="wfs-status-color">
+                                        </td>
+                                        <td style="padding: 0.75rem; text-align: center;">
+                                            <input type="color" name="statuses[<?php echo esc_attr($row_index); ?>][bg]" value="<?php echo esc_attr($config['bg']); ?>" class="wfs-status-color">
+                                        </td>
+                                        <td style="padding: 0.75rem; text-align: center;">
+                                            <button type="button" class="wfs-remove-status" style="background: #ef4444; color: white; border: none; padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer;">Sil</button>
+                                        </td>
+                                    </tr>
+                                    <?php $row_index++; ?>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr class="wfs-status-row" data-index="0" style="border-bottom: 1px solid #e5e7eb;">
+                                    <td style="padding: 0.75rem;">
+                                        <input type="text" name="statuses[0][label]" value="Beklemede" class="wfs-status-input" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;">
+                                    </td>
+                                    <td style="padding: 0.75rem;">
+                                        <input type="text" name="statuses[0][slug]" value="pending" class="wfs-status-slug" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;" required>
+                                    </td>
+                                    <td style="padding: 0.75rem; text-align: center;">
+                                        <input type="color" name="statuses[0][color]" value="#f59e0b" class="wfs-status-color">
+                                    </td>
+                                    <td style="padding: 0.75rem; text-align: center;">
+                                        <input type="color" name="statuses[0][bg]" value="#fef3c7" class="wfs-status-color">
+                                    </td>
+                                    <td style="padding: 0.75rem; text-align: center;">
+                                        <button type="button" class="wfs-remove-status" style="background: #ef4444; color: white; border: none; padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer;">Sil</button>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <button type="button" id="wfs-add-status" style="background: #3b82f6; color: white; border: none; padding: 0.65rem 1.25rem; border-radius: 8px; font-weight: 500; cursor: pointer;">+ Yeni Statü Ekle</button>
+                    <button type="submit" name="save_statuses" class="button button-primary" style="background: #10b981; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;">💾 Statüleri Kaydet</button>
+                </div>
+            </form>
+
+            <template id="wfs-status-row-template">
+                <tr class="wfs-status-row" data-index="__index__" style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 0.75rem;">
+                        <input type="text" name="statuses[__index__][label]" value="" class="wfs-status-input" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;" data-autoslug="true">
+                    </td>
+                    <td style="padding: 0.75rem;">
+                        <input type="text" name="statuses[__index__][slug]" value="" class="wfs-status-slug" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;" required>
+                    </td>
+                    <td style="padding: 0.75rem; text-align: center;">
+                        <input type="color" name="statuses[__index__][color]" value="#3b82f6" class="wfs-status-color">
+                    </td>
+                    <td style="padding: 0.75rem; text-align: center;">
+                        <input type="color" name="statuses[__index__][bg]" value="#dbeafe" class="wfs-status-color">
+                    </td>
+                    <td style="padding: 0.75rem; text-align: center;">
+                        <button type="button" class="wfs-remove-status" style="background: #ef4444; color: white; border: none; padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer;">Sil</button>
+                    </td>
+                </tr>
+            </template>
         </div>
     </form>
 </div>
@@ -1146,5 +1270,57 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    const statusTable = document.querySelector('.wfs-status-table tbody');
+    const addStatusBtn = document.getElementById('wfs-add-status');
+    const statusTemplate = document.getElementById('wfs-status-row-template');
+
+    function attachSlugListener(row) {
+        const labelInput = row.querySelector('.wfs-status-input');
+        const slugInput = row.querySelector('.wfs-status-slug');
+
+        if (!labelInput || !slugInput || labelInput.dataset.autoslug !== 'true') {
+            return;
+        }
+
+        labelInput.addEventListener('input', function() {
+            const value = labelInput.value
+                .toLowerCase()
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+
+            slugInput.value = value;
+        });
+    }
+
+    if (statusTable && addStatusBtn && statusTemplate) {
+        let statusIndex = statusTable.querySelectorAll('.wfs-status-row').length;
+
+        statusTable.querySelectorAll('.wfs-status-row').forEach(attachSlugListener);
+
+        addStatusBtn.addEventListener('click', function() {
+            const html = statusTemplate.innerHTML.replace(/__index__/g, statusIndex);
+            statusTable.insertAdjacentHTML('beforeend', html);
+
+            const newRow = statusTable.querySelector(`.wfs-status-row[data-index="${statusIndex}"]`);
+            if (newRow) {
+                attachSlugListener(newRow);
+            }
+
+            statusIndex++;
+        });
+
+        statusTable.addEventListener('click', function(event) {
+            if (event.target.classList.contains('wfs-remove-status')) {
+                const row = event.target.closest('.wfs-status-row');
+                if (row) {
+                    row.remove();
+                }
+            }
+        });
+    }
 });
 </script>

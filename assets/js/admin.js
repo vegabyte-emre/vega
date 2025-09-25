@@ -48,7 +48,7 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        if (!confirm('Bu kaydı seçilen kullanıcıya atamak istediğinizden emin misiniz?')) {
+        if (!confirm(wfs_ajax.strings.confirm_assign)) {
             return;
         }
         
@@ -62,8 +62,22 @@ jQuery(document).ready(function($) {
         })
         .done(function(response) {
             if (response.success) {
-                showToast('Kayıt başarıyla atandı', 'success');
-                setTimeout(() => location.reload(), 1500);
+                const assignedName = response.data && response.data.assigned_name ? response.data.assigned_name : '';
+                const displayName = assignedName || wfs_ajax.strings.assignment_none;
+
+                showToast(wfs_ajax.strings.assignment_success, 'success');
+
+                const $card = $('.wfs-record-card[data-record-id="' + recordId + '"]');
+                $card.find('.wfs-assignment-label').text(displayName);
+
+                const $detailInfo = $('.wfs-record-details[data-record-id="' + recordId + '"] .wfs-assigned-info');
+                if ($detailInfo.length) {
+                    if (assignedName) {
+                        $detailInfo.removeClass('is-empty').html('<strong>Atanan:</strong> ' + assignedName);
+                    } else {
+                        $detailInfo.addClass('is-empty').text(wfs_ajax.strings.assignment_none);
+                    }
+                }
             } else {
                 showToast('Hata: ' + (response.data || 'Bilinmeyen hata'), 'error');
             }
@@ -98,8 +112,27 @@ jQuery(document).ready(function($) {
         })
         .done(function(response) {
             if (response.success) {
-                showToast('Statü başarıyla güncellendi', 'success');
-                setTimeout(() => location.reload(), 1500);
+                const data = response.data || {};
+                const badgeColor = data.color || '#3b82f6';
+                const badgeBg = data.bg || '#dbeafe';
+                const badgeLabel = data.label || newStatus;
+
+                showToast(wfs_ajax.strings.status_success, 'success');
+
+                const $card = $('.wfs-record-card[data-record-id="' + recordId + '"]');
+                const $cardBadge = $card.find('.wfs-status-badge');
+                $cardBadge.css({ background: badgeBg, color: badgeColor });
+                $cardBadge.find('.wfs-status-light').css('background', badgeColor);
+                $cardBadge.find('.wfs-status-text').text(badgeLabel);
+
+                $('.wfs-status-select[data-record-id="' + recordId + '"]').val(newStatus);
+
+                const $detailBadge = $('.wfs-record-details[data-record-id="' + recordId + '"] .wfs-current-status .wfs-status-badge');
+                if ($detailBadge.length) {
+                    $detailBadge.css({ background: badgeBg, color: badgeColor });
+                    $detailBadge.find('.wfs-status-light').css('background', badgeColor);
+                    $detailBadge.find('.wfs-status-text').text(badgeLabel);
+                }
             } else {
                 showToast('Hata: ' + (response.data || 'Bilinmeyen hata'), 'error');
             }
@@ -235,115 +268,34 @@ jQuery(document).ready(function($) {
     
     // Filtreleme
     let filterTimeout;
-    
-    function applyFilters() {
-        clearTimeout(filterTimeout);
-        filterTimeout = setTimeout(function() {
-            const search = $('#wfs-search').val();
-            const statusFilter = $('#wfs-status-filter').val();
-            const repFilter = $('#wfs-rep-filter').val();
-            
-            $('#wfs-loading').show();
-            $('#wfs-records-container').hide();
-            
-            $            .post(wfs_ajax.ajax_url, {
-                action: 'wfs_get_records',
-                nonce: wfs_ajax.nonce,
-                search: search,
-                status_filter: statusFilter,
-                representative_filter: repFilter,
-                page: 1,
-                per_page: 20
-            })
-            .done(function(response) {
-                if (response.success) {
-                    renderRecords(response.data);
-                } else {
-                    showToast('Kayıtlar yüklenirken hata oluştu', 'error');
-                }
-            })
-            .fail(function() {
-                showToast('Bağlantı hatası', 'error');
-            })
-            .always(function() {
-                $('#wfs-loading').hide();
-                $('#wfs-records-container').show();
-            });
-        }, 500);
-    }
-    
-    // Kayıtları render et
-    function renderRecords(records) {
-        const $container = $('#wfs-records-container');
-        
-        if (!records || records.length === 0) {
-            $container.html(`
-                <div class="wfs-empty-state">
-                    <div class="wfs-empty-icon">📋</div>
-                    <h3>Kayıt Bulunamadı</h3>
-                    <p>Arama kriterlerinize uygun kayıt bulunamadı.</p>
-                </div>
-            `);
-            return;
+
+    function redirectWithFilters() {
+        const search = $('#wfs-search').val().trim();
+        const statusFilter = $('#wfs-status-filter').val();
+        const repFilter = $('#wfs-rep-filter').val();
+
+        const params = new URLSearchParams();
+        if (search) {
+            params.set('wfs_search', search);
         }
-        
-        let html = '';
-        records.forEach(function(record) {
-            // Kayıt kartını oluştur
-            const initials = (record.first_name[0] + record.last_name[0]).toUpperCase();
-            const statusInfo = getStatusInfo(record.overall_status);
-            
-            html += `
-                <div class="wfs-record-card">
-                    <div class="wfs-card-header">
-                        <div class="wfs-user-info">
-                            <div class="wfs-avatar" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">
-                                ${initials}
-                            </div>
-                            <div class="wfs-user-details">
-                                <h3 class="wfs-user-name">${record.first_name} ${record.last_name}</h3>
-                                <p class="wfs-user-email">${record.email}</p>
-                            </div>
-                        </div>
-                        <div class="wfs-card-actions">
-                            <span class="wfs-status-badge" style="background: ${statusInfo.bg}; color: ${statusInfo.color};">
-                                <span class="wfs-status-light" style="background: ${statusInfo.color};"></span>
-                                ${statusInfo.text}
-                            </span>
-                            <button class="wfs-toggle-details wfs-btn-link" data-record-id="${record.id}">
-                                Detaylar
-                            </button>
-                        </div>
-                    </div>
-                    <!-- Detaylar bölümü dinamik olarak yüklenir -->
-                </div>
-            `;
-        });
-        
-        $container.html(html);
+        if (statusFilter) {
+            params.set('wfs_status', statusFilter);
+        }
+        if (repFilter) {
+            params.set('wfs_rep', repFilter);
+        }
+
+        const query = params.toString();
+        const url = query ? `${wfs_ajax.filters_base_url}&${query}` : wfs_ajax.filters_base_url;
+        window.location.href = url;
     }
-    
-    // Statü bilgilerini getir
-    function getStatusInfo(status) {
-        const statusMap = {
-            'pending': { color: '#f59e0b', bg: '#fef3c7', text: 'Beklemede' },
-            'processing': { color: '#3b82f6', bg: '#dbeafe', text: 'İşleniyor' },
-            'approved': { color: '#10b981', bg: '#d1fae5', text: 'Onaylandı' },
-            'rejected': { color: '#ef4444', bg: '#fee2e2', text: 'Reddedildi' },
-            'completed': { color: '#8b5cf6', bg: '#ede9fe', text: 'Tamamlandı' }
-        };
-        
-        return statusMap[status] || statusMap['pending'];
-    }
-    
-    // Filtre event listeners
-    $('#wfs-search').on('input', applyFilters);
-    $('#wfs-status-filter, #wfs-rep-filter').on('change', applyFilters);
-    
-    // Sayfa yüklendiğinde kayıtları getir (eğer filtreler varsa)
-    if ($('#wfs-records-container').length && $('#wfs-search').length) {
-        // İlk yüklemede mevcut HTML'i koruyoruz, sadece filtre uygulandığında AJAX çağrısı yapıyoruz
-    }
+
+    $('#wfs-search').on('input', function() {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(redirectWithFilters, 500);
+    });
+
+    $('#wfs-status-filter, #wfs-rep-filter').on('change', redirectWithFilters);
     
     // FluentForms alan eşleştirme modal
     $(document).on('click', '.map-fields-btn', function() {
