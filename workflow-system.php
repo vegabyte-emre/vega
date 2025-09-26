@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name: İş Akışı Yönetim Sistemi
- * Plugin URI: https://yourwebsite.com
+ * Plugin Name: Eu WorkFlow
+ * Plugin URI: https://vegabyte.com.tr
  * Description: FluentForms entegrasyonlu modern iş akışı yönetim sistemi
  * Version: 1.0.0
- * Author: Your Name
+ * Author: Emre Nasır - Vega
  * License: GPL v2 or later
- * Text Domain: workflow-system
+ * Text Domain: eu-workflow
  */
 
 // Doğrudan erişimi engelle
@@ -18,6 +18,8 @@ if (!defined('ABSPATH')) {
 define('WFS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WFS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('WFS_VERSION', '1.0.0');
+define('WFS_MENU_SLUG', 'eu-workflow');
+define('WFS_TEXT_DOMAIN', 'eu-workflow');
 
 // Ana sınıf
 class WorkflowSystem {
@@ -29,38 +31,38 @@ class WorkflowSystem {
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
 
         $this->file_categories = array(
-            'diploma'    => array('label' => __('Diploma', 'workflow-system'), 'icon' => '🎓'),
-            'transcript' => array('label' => __('Transkript', 'workflow-system'), 'icon' => '📜'),
-            'sgk'        => array('label' => __('SGK Hizmet Dökümü', 'workflow-system'), 'icon' => '📋'),
-            'cv'         => array('label' => __('CV', 'workflow-system'), 'icon' => '📄'),
-            'other'      => array('label' => __('Diğer Belgeler', 'workflow-system'), 'icon' => '📂'),
+            'diploma'    => array('label' => __('Diploma', WFS_TEXT_DOMAIN), 'icon' => '🎓'),
+            'transcript' => array('label' => __('Transkript', WFS_TEXT_DOMAIN), 'icon' => '📜'),
+            'sgk'        => array('label' => __('SGK Hizmet Dökümü', WFS_TEXT_DOMAIN), 'icon' => '📋'),
+            'cv'         => array('label' => __('CV', WFS_TEXT_DOMAIN), 'icon' => '📄'),
+            'other'      => array('label' => __('Diğer Belgeler', WFS_TEXT_DOMAIN), 'icon' => '📂'),
         );
     }
 
     public function get_default_status_settings() {
         return array(
             'pending' => array(
-                'label' => __('Beklemede', 'workflow-system'),
+                'label' => __('Beklemede', WFS_TEXT_DOMAIN),
                 'color' => '#f59e0b',
                 'bg'    => '#fef3c7',
             ),
             'processing' => array(
-                'label' => __('İşleniyor', 'workflow-system'),
+                'label' => __('İşleniyor', WFS_TEXT_DOMAIN),
                 'color' => '#3b82f6',
                 'bg'    => '#dbeafe',
             ),
             'approved' => array(
-                'label' => __('Onaylandı', 'workflow-system'),
+                'label' => __('Onaylandı', WFS_TEXT_DOMAIN),
                 'color' => '#10b981',
                 'bg'    => '#d1fae5',
             ),
             'rejected' => array(
-                'label' => __('Reddedildi', 'workflow-system'),
+                'label' => __('Reddedildi', WFS_TEXT_DOMAIN),
                 'color' => '#ef4444',
                 'bg'    => '#fee2e2',
             ),
             'completed' => array(
-                'label' => __('Tamamlandı', 'workflow-system'),
+                'label' => __('Tamamlandı', WFS_TEXT_DOMAIN),
                 'color' => '#8b5cf6',
                 'bg'    => '#ede9fe',
             ),
@@ -115,6 +117,52 @@ class WorkflowSystem {
 
     public function get_file_categories() {
         return $this->file_categories;
+    }
+
+    private function normalize_search_terms($search) {
+        $search = trim((string) $search);
+
+        if ($search === '') {
+            return array();
+        }
+
+        if (function_exists('mb_strtolower')) {
+            $search = mb_strtolower($search, 'UTF-8');
+        } else {
+            $search = strtolower($search);
+        }
+
+        $search = preg_replace('/\s+/u', ' ', $search);
+        $parts = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
+
+        if (!$parts) {
+            return array();
+        }
+
+        return array_values(array_unique($parts));
+    }
+
+    private function apply_search_filters($search, array &$where_conditions, array &$where_values, $alias = 'r') {
+        global $wpdb;
+
+        $terms = $this->normalize_search_terms($search);
+
+        if (empty($terms)) {
+            return;
+        }
+
+        $target = "LOWER(CONCAT_WS(' ', {$alias}.first_name, {$alias}.last_name, {$alias}.email, {$alias}.phone))";
+
+        foreach ($terms as $term) {
+            $where_conditions[] = "$target LIKE %s";
+            $where_values[] = '%' . $wpdb->esc_like($term) . '%';
+        }
+
+        $digits = preg_replace('/[^0-9]+/', '', $search);
+        if (!empty($digits)) {
+            $where_conditions[] = "REPLACE(REPLACE(REPLACE(REPLACE({$alias}.phone, ' ', ''), '-', ''), '(', ''), ')', '') LIKE %s";
+            $where_values[] = '%' . $wpdb->esc_like($digits) . '%';
+        }
     }
 
     public function get_assignable_users() {
@@ -221,13 +269,14 @@ class WorkflowSystem {
     
     public function init() {
         // Çevirileri yükle
-        load_plugin_textdomain('workflow-system', false, dirname(plugin_basename(__FILE__)) . '/languages');
+        load_plugin_textdomain(WFS_TEXT_DOMAIN, false, dirname(plugin_basename(__FILE__)) . '/languages');
         
         add_action('wp_ajax_wfs_get_record_details', array($this, 'ajax_get_record_details'));
         add_action('wp_ajax_wfs_create_record', array($this, 'ajax_create_record'));
         add_action('wp_ajax_wfs_toggle_interview', array($this, 'ajax_toggle_interview'));
         add_action('wp_ajax_wfs_update_payment', array($this, 'ajax_update_payment'));
         add_action('wp_ajax_wfs_get_records', array($this, 'ajax_get_records'));
+        add_action('wp_ajax_wfs_search_suggestions', array($this, 'ajax_search_suggestions'));
         add_action('wp_ajax_wfs_update_file_status', array($this, 'ajax_update_file_status'));
         add_action('wp_ajax_wfs_update_record_status', array($this, 'ajax_update_record_status'));
         add_action('wp_ajax_wfs_assign_record', array($this, 'ajax_assign_record'));
@@ -333,7 +382,7 @@ class WorkflowSystem {
         // Mevcut rolleri kontrol et ve gerekirse güncelle
         $role = get_role('wfs_superadmin');
         if (!$role) {
-            add_role('wfs_superadmin', __('İş Akışı Süperadmin', 'workflow-system'), array(
+            add_role('wfs_superadmin', __('İş Akışı Süperadmin', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -347,7 +396,7 @@ class WorkflowSystem {
         
         $role = get_role('wfs_representative');
         if (!$role) {
-            add_role('wfs_representative', __('İş Akışı Temsilci', 'workflow-system'), array(
+            add_role('wfs_representative', __('İş Akışı Temsilci', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -362,7 +411,7 @@ class WorkflowSystem {
 
         $role = get_role('wfs_consultant');
         if (!$role) {
-            add_role('wfs_consultant', __('İş Akışı Danışan', 'workflow-system'), array(
+            add_role('wfs_consultant', __('İş Akışı Danışan', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -374,39 +423,39 @@ class WorkflowSystem {
     
     public function admin_menu() {
         add_menu_page(
-            __('İş Akışı Sistemi', 'workflow-system'),
-            __('İş Akışı', 'workflow-system'),
+            __('İş Akışı Sistemi', WFS_TEXT_DOMAIN),
+            __('İş Akışı', WFS_TEXT_DOMAIN),
             'read', // Temel okuma yetkisi
-            'workflow-system',
+            WFS_MENU_SLUG,
             array($this, 'admin_page'),
             'dashicons-clipboard',
             30
         );
 
         add_submenu_page(
-            'workflow-system',
-            __('Kayıtlar', 'workflow-system'),
-            __('Kayıtlar', 'workflow-system'),
+            WFS_MENU_SLUG,
+            __('Kayıtlar', WFS_TEXT_DOMAIN),
+            __('Kayıtlar', WFS_TEXT_DOMAIN),
             'read',
-            'workflow-system',
+            WFS_MENU_SLUG,
             array($this, 'admin_page')
         );
 
         add_submenu_page(
-            'workflow-system',
-            __('Raporlar', 'workflow-system'),
-            __('Raporlar', 'workflow-system'),
+            WFS_MENU_SLUG,
+            __('Raporlar', WFS_TEXT_DOMAIN),
+            __('Raporlar', WFS_TEXT_DOMAIN),
             'read',
-            'workflow-reports',
+            WFS_MENU_SLUG . '-reports',
             array($this, 'reports_page')
         );
 
         add_submenu_page(
-            'workflow-system',
-            __('Ayarlar', 'workflow-system'),
-            __('Ayarlar', 'workflow-system'),
+            WFS_MENU_SLUG,
+            __('Ayarlar', WFS_TEXT_DOMAIN),
+            __('Ayarlar', WFS_TEXT_DOMAIN),
             'manage_options',
-            'workflow-settings',
+            WFS_MENU_SLUG . '-settings',
             array($this, 'settings_page')
         );
         
@@ -472,7 +521,7 @@ class WorkflowSystem {
         
         $current_screen = get_current_screen();
         if ($current_screen && $current_screen->id === 'dashboard') {
-            wp_redirect(admin_url('admin.php?page=workflow-system'));
+            wp_redirect(admin_url('admin.php?page=' . WFS_MENU_SLUG));
             exit;
         }
     }
@@ -492,21 +541,22 @@ class WorkflowSystem {
             'file_categories' => $this->get_file_categories(),
             'can_assign' => current_user_can('manage_options') || current_user_can('wfs_assign_records'),
             'can_review' => current_user_can('manage_options') || current_user_can('wfs_review_files'),
-            'filters_base_url' => esc_url(admin_url('admin.php?page=workflow-system')),
+            'filters_base_url' => esc_url(admin_url('admin.php?page=' . WFS_MENU_SLUG)),
+            'text_domain' => WFS_TEXT_DOMAIN,
             'strings' => array(
-                'confirm_assign' => __('Bu kaydı atamak istediğinizden emin misiniz?', 'workflow-system'),
-                'success' => __('İşlem başarılı', 'workflow-system'),
-                'error' => __('Bir hata oluştu', 'workflow-system'),
-                'assignment_success' => __('Kayıt başarıyla atandı', 'workflow-system'),
-                'assignment_none' => __('Henüz atama yapılmadı.', 'workflow-system'),
-                'status_success' => __('Statü başarıyla güncellendi', 'workflow-system'),
-                'record_created' => __('Kayıt başarıyla oluşturuldu', 'workflow-system'),
-                'interview_completed' => __('Görüşme tamamlandı', 'workflow-system'),
-                'interview_marked' => __('Görüşme durumu güncellendi', 'workflow-system'),
-                'payment_saved' => __('Ödeme bilgisi kaydedildi', 'workflow-system'),
-                'pending' => __('Beklemede', 'workflow-system'),
-                'approved' => __('Onaylı', 'workflow-system'),
-                'rejected' => __('Reddedildi', 'workflow-system')
+                'confirm_assign' => __('Bu kaydı atamak istediğinizden emin misiniz?', WFS_TEXT_DOMAIN),
+                'success' => __('İşlem başarılı', WFS_TEXT_DOMAIN),
+                'error' => __('Bir hata oluştu', WFS_TEXT_DOMAIN),
+                'assignment_success' => __('Kayıt başarıyla atandı', WFS_TEXT_DOMAIN),
+                'assignment_none' => __('Henüz atama yapılmadı.', WFS_TEXT_DOMAIN),
+                'status_success' => __('Statü başarıyla güncellendi', WFS_TEXT_DOMAIN),
+                'record_created' => __('Kayıt başarıyla oluşturuldu', WFS_TEXT_DOMAIN),
+                'interview_completed' => __('Görüşme tamamlandı', WFS_TEXT_DOMAIN),
+                'interview_marked' => __('Görüşme durumu güncellendi', WFS_TEXT_DOMAIN),
+                'payment_saved' => __('Ödeme bilgisi kaydedildi', WFS_TEXT_DOMAIN),
+                'pending' => __('Beklemede', WFS_TEXT_DOMAIN),
+                'approved' => __('Onaylı', WFS_TEXT_DOMAIN),
+                'rejected' => __('Reddedildi', WFS_TEXT_DOMAIN)
             )
         ));
     }
@@ -627,14 +677,7 @@ class WorkflowSystem {
         $where_conditions = array('1=1');
         $where_values = array();
         
-        if (!empty($search)) {
-            $where_conditions[] = "(first_name LIKE %s OR last_name LIKE %s OR email LIKE %s OR phone LIKE %s)";
-            $search_term = '%' . $wpdb->esc_like($search) . '%';
-            $where_values[] = $search_term;
-            $where_values[] = $search_term;
-            $where_values[] = $search_term;
-            $where_values[] = $search_term;
-        }
+        $this->apply_search_filters($search, $where_conditions, $where_values, 'r');
         
         if (!empty($status_filter)) {
             $where_conditions[] = "overall_status = %s";
@@ -694,6 +737,59 @@ class WorkflowSystem {
         wp_send_json_success(array(
             'items' => $records_response,
         ));
+    }
+
+    public function ajax_search_suggestions() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (
+            !current_user_can('manage_options') &&
+            !current_user_can('wfs_manage_all') &&
+            !current_user_can('wfs_assign_records') &&
+            !current_user_can('wfs_view_assigned') &&
+            !current_user_can('wfs_review_files')
+        ) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
+
+        $term = sanitize_text_field($_POST['term'] ?? '');
+        $where_conditions = array('1=1');
+        $where_values = array();
+
+        $this->apply_search_filters($term, $where_conditions, $where_values, 'r');
+
+        if (count($where_conditions) === 1) {
+            wp_send_json_success(array('suggestions' => array()));
+            return;
+        }
+
+        $query = "SELECT r.id, r.first_name, r.last_name, r.email
+                  FROM {$wpdb->prefix}wfs_records r
+                  WHERE " . implode(' AND ', $where_conditions) . "
+                  ORDER BY r.updated_at DESC
+                  LIMIT %d";
+
+        $where_values[] = 7;
+
+        $results = $wpdb->get_results($wpdb->prepare($query, $where_values));
+
+        $suggestions = array();
+
+        foreach ($results as $row) {
+            $suggestions[] = array(
+                'id' => (int) $row->id,
+                'label' => trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? '')),
+                'email' => $row->email,
+            );
+        }
+
+        wp_send_json_success(array('suggestions' => $suggestions));
     }
     
     public function ajax_update_file_status() {
@@ -830,7 +926,7 @@ class WorkflowSystem {
         }
 
         if ($first_name === '' || $last_name === '' || $email === '') {
-            wp_send_json_error(__('Lütfen zorunlu alanları doldurun.', 'workflow-system'));
+            wp_send_json_error(__('Lütfen zorunlu alanları doldurun.', WFS_TEXT_DOMAIN));
             return;
         }
 
@@ -1041,7 +1137,7 @@ class WorkflowSystem {
         }
 
         if ($record->overall_status !== 'completed') {
-            wp_send_json_error(__('Ödeme bilgisi sadece tamamlanan kayıtlarda güncellenebilir.', 'workflow-system'));
+            wp_send_json_error(__('Ödeme bilgisi sadece tamamlanan kayıtlarda güncellenebilir.', WFS_TEXT_DOMAIN));
             return;
         }
 
@@ -1146,12 +1242,12 @@ class WorkflowSystem {
         $user = get_user_by('id', $assigned_to);
         
         if ($record && $user) {
-            $subject = sprintf(__('Size yeni bir talep atandı: %s %s', 'workflow-system'),
+            $subject = sprintf(__('Size yeni bir talep atandı: %s %s', WFS_TEXT_DOMAIN),
                 $record->first_name, $record->last_name);
 
             $record_url = add_query_arg(
                 array(
-                    'page'     => 'workflow-system',
+                    'page'     => WFS_TEXT_DOMAIN,
                     'record'   => $record_id,
                 ),
                 admin_url('admin.php')
@@ -1159,14 +1255,14 @@ class WorkflowSystem {
 
             $interview_info = '';
             if ($record->interview_required) {
-                $interview_date = $record->interview_at ? date_i18n('d.m.Y H:i', strtotime($record->interview_at)) : __('Belirtilmemiş', 'workflow-system');
-                $interview_info = sprintf("\nGörüşme Gereksinimi: %s\nGörüşme Tarihi: %s", __('Evet', 'workflow-system'), $interview_date);
+                $interview_date = $record->interview_at ? date_i18n('d.m.Y H:i', strtotime($record->interview_at)) : __('Belirtilmemiş', WFS_TEXT_DOMAIN);
+                $interview_info = sprintf("\nGörüşme Gereksinimi: %s\nGörüşme Tarihi: %s", __('Evet', WFS_TEXT_DOMAIN), $interview_date);
             } else {
-                $interview_info = "\nGörüşme Gereksinimi: " . __('Hayır', 'workflow-system');
+                $interview_info = "\nGörüşme Gereksinimi: " . __('Hayır', WFS_TEXT_DOMAIN);
             }
 
             $message = sprintf(
-                __("Merhaba %s,\n\nSize yeni bir talep atandı:\n\nAd Soyad: %s %s\nE-posta: %s\nTelefon: %s\nEğitim Durumu: %s\nBölüm: %s\nMeslek: %s\nYaş: %s%s\n\nKaydı görüntülemek için: %s\n\nLütfen sisteme giriş yaparak talebi inceleyin.\n\nTeşekkürler", 'workflow-system'),
+                __("Merhaba %s,\n\nSize yeni bir talep atandı:\n\nAd Soyad: %s %s\nE-posta: %s\nTelefon: %s\nEğitim Durumu: %s\nBölüm: %s\nMeslek: %s\nYaş: %s%s\n\nKaydı görüntülemek için: %s\n\nLütfen sisteme giriş yaparak talebi inceleyin.\n\nTeşekkürler", WFS_TEXT_DOMAIN),
                 $user->display_name,
                 $record->first_name,
                 $record->last_name,
@@ -1263,7 +1359,7 @@ class WorkflowSystem {
         if (file_exists($template_path)) {
             include $template_path;
         } else {
-            echo '<div class="notice notice-error"><p>' . __('Admin sayfası şablonu bulunamadı.', 'workflow-system') . '</p></div>';
+            echo '<div class="notice notice-error"><p>' . __('Admin sayfası şablonu bulunamadı.', WFS_TEXT_DOMAIN) . '</p></div>';
         }
     }
     
@@ -1272,7 +1368,7 @@ class WorkflowSystem {
         if (file_exists($template_path)) {
             include $template_path;
         } else {
-            echo '<div class="notice notice-error"><p>' . __('Raporlar sayfası şablonu bulunamadı.', 'workflow-system') . '</p></div>';
+            echo '<div class="notice notice-error"><p>' . __('Raporlar sayfası şablonu bulunamadı.', WFS_TEXT_DOMAIN) . '</p></div>';
         }
     }
     
@@ -1282,7 +1378,7 @@ class WorkflowSystem {
             $hide_wp_menus = isset($_POST['wfs_hide_wp_menus']) ? 1 : 0;
             update_option('wfs_hide_wp_menus', $hide_wp_menus);
             
-            echo '<div class="notice notice-success"><p>' . __('Ayarlar kaydedildi.', 'workflow-system') . '</p></div>';
+            echo '<div class="notice notice-success"><p>' . __('Ayarlar kaydedildi.', WFS_TEXT_DOMAIN) . '</p></div>';
         }
         
         $status_settings = $this->get_status_settings();
@@ -1295,16 +1391,16 @@ class WorkflowSystem {
             $hide_wp_menus = get_option('wfs_hide_wp_menus', false);
             ?>
             <div class="wrap">
-                <h1><?php echo esc_html(__('İş Akışı Ayarları', 'workflow-system')); ?></h1>
+                <h1><?php echo esc_html(__('İş Akışı Ayarları', WFS_TEXT_DOMAIN)); ?></h1>
                 <form method="post" action="">
                     <?php wp_nonce_field('wfs_settings_nonce'); ?>
                     <table class="form-table">
                         <tr>
-                            <th scope="row"><?php _e('WordPress Menülerini Gizle', 'workflow-system'); ?></th>
+                            <th scope="row"><?php _e('WordPress Menülerini Gizle', WFS_TEXT_DOMAIN); ?></th>
                             <td>
                                 <label>
                                     <input type="checkbox" name="wfs_hide_wp_menus" value="1" <?php checked($hide_wp_menus); ?>>
-                                    <?php _e('Admin dışındaki kullanıcılar için WordPress menülerini gizle', 'workflow-system'); ?>
+                                    <?php _e('Admin dışındaki kullanıcılar için WordPress menülerini gizle', WFS_TEXT_DOMAIN); ?>
                                 </label>
                             </td>
                         </tr>
@@ -1321,7 +1417,7 @@ class WorkflowSystem {
         if (file_exists($template_path)) {
             include $template_path;
         } else {
-            echo '<div class="notice notice-error"><p>' . __('Form Builder sayfası şablonu bulunamadı.', 'workflow-system') . '</p></div>';
+            echo '<div class="notice notice-error"><p>' . __('Form Builder sayfası şablonu bulunamadı.', WFS_TEXT_DOMAIN) . '</p></div>';
         }
     }
     

@@ -1,10 +1,77 @@
 jQuery(document).ready(function($) {
     const $recordsContainer = $('#wfs-records-container');
     const $loading = $('#wfs-loading');
+    const $searchInput = $('#wfs-search');
+    const $searchButton = $('#wfs-search-button');
+    const $searchSuggestions = $('#wfs-search-suggestions');
     const statusMap = wfs_ajax.statuses || {};
     const fileCategories = wfs_ajax.file_categories || {};
     const hasI18n = typeof window !== 'undefined' && window.wp && wp.i18n && typeof wp.i18n.__ === 'function';
-    const __ = (text, fallback) => hasI18n ? wp.i18n.__(text, 'workflow-system') : (fallback !== undefined ? fallback : text);
+    const textDomain = wfs_ajax.text_domain || 'eu-workflow';
+    const __ = (text, fallback) => hasI18n ? wp.i18n.__(text, textDomain) : (fallback !== undefined ? fallback : text);
+
+    let suggestionRequest = null;
+
+    function hideSuggestions() {
+        $searchSuggestions.removeClass('is-visible').attr('aria-hidden', 'true').empty();
+    }
+
+    function renderSuggestions(items) {
+        if (!items || !items.length) {
+            hideSuggestions();
+            return;
+        }
+
+        const rows = items.map((item) => {
+            const rawLabel = item.label || '';
+            const rawEmail = item.email || '';
+            const name = escapeHtml(rawLabel);
+            const email = escapeHtml(rawEmail);
+            const id = escapeHtml(String(item.id || ''));
+            const dataLabel = encodeURIComponent(rawLabel);
+            const dataEmail = encodeURIComponent(rawEmail);
+            return `
+                <button type="button" class="wfs-search-suggestion" role="option" data-record-id="${id}" data-label="${dataLabel}" data-email="${dataEmail}">
+                    <span class="wfs-search-suggestion__name">${name}</span>
+                    ${email ? `<span class="wfs-search-suggestion__meta">${email}</span>` : ''}
+                </button>
+            `;
+        }).join('');
+
+        $searchSuggestions.html(rows).addClass('is-visible').attr('aria-hidden', 'false');
+    }
+
+    function fetchSuggestions(query) {
+        if (suggestionRequest) {
+            suggestionRequest.abort();
+        }
+
+        suggestionRequest = $.post(wfs_ajax.ajax_url, {
+            action: 'wfs_search_suggestions',
+            nonce: wfs_ajax.nonce,
+            term: query
+        }).done(function(response) {
+            if (response.success && response.data && response.data.suggestions) {
+                renderSuggestions(response.data.suggestions);
+            } else {
+                hideSuggestions();
+            }
+        }).fail(function() {
+            hideSuggestions();
+        }).always(function() {
+            suggestionRequest = null;
+        });
+    }
+
+    const debouncedSuggest = (function() {
+        let timeout;
+        return function(query) {
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                fetchSuggestions(query);
+            }, 220);
+        };
+    })();
 
     function showToast(message, type = 'success') {
         const toastClass = type === 'error' ? 'wfs-toast error' : 'wfs-toast';
@@ -301,11 +368,12 @@ jQuery(document).ready(function($) {
     }
 
     function fetchRecords() {
-        const search = $('#wfs-search').val() || '';
+        const search = ($searchInput.val() || '').trim();
         const statusFilter = $('#wfs-status-filter').val() || '';
         const repFilter = $('#wfs-rep-filter').val() || '';
 
         $loading.show();
+        hideSuggestions();
 
         $.post(wfs_ajax.ajax_url, {
             action: 'wfs_get_records',
@@ -336,7 +404,46 @@ jQuery(document).ready(function($) {
         };
     })();
 
-    $('#wfs-search').on('input', debouncedFetch);
+    $searchInput.on('input', function() {
+        const query = ($searchInput.val() || '').trim();
+        if (query.length >= 2) {
+            debouncedSuggest(query);
+        } else {
+            hideSuggestions();
+        }
+        debouncedFetch();
+    });
+
+    $searchInput.on('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            fetchRecords();
+        }
+    });
+
+    $searchInput.on('blur', function() {
+        setTimeout(hideSuggestions, 120);
+    });
+
+    $searchButton.on('click', function(event) {
+        event.preventDefault();
+        fetchRecords();
+    });
+
+    $(document).on('mousedown', '.wfs-search-suggestion', function(event) {
+        event.preventDefault();
+        const label = $(this).data('label') ? decodeURIComponent($(this).data('label')) : '';
+        $searchInput.val(label);
+        hideSuggestions();
+        fetchRecords();
+    });
+
+    $(document).on('click', function(event) {
+        if (!$(event.target).closest('.wfs-search-wrapper').length) {
+            hideSuggestions();
+        }
+    });
+
     $('#wfs-status-filter, #wfs-rep-filter').on('change', fetchRecords);
 
     $('#wfs-create-record-form').on('submit', function(e) {

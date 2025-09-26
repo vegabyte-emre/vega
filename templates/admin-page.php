@@ -14,17 +14,17 @@ $active_filters = isset($active_filters) && is_array($active_filters)
 
 if (empty($status_settings)) {
     $status_settings = array(
-        'pending' => array('label' => __('Beklemede', 'workflow-system'), 'color' => '#f59e0b', 'bg' => '#fef3c7'),
+        'pending' => array('label' => __('Beklemede', WFS_TEXT_DOMAIN), 'color' => '#f59e0b', 'bg' => '#fef3c7'),
     );
 }
 
 if (empty($file_categories)) {
     $file_categories = array(
-        'diploma'    => array('label' => __('Diploma', 'workflow-system'), 'icon' => '🎓'),
-        'transcript' => array('label' => __('Transkript', 'workflow-system'), 'icon' => '📜'),
-        'sgk'        => array('label' => __('SGK Hizmet Dökümü', 'workflow-system'), 'icon' => '📋'),
-        'cv'         => array('label' => __('CV', 'workflow-system'), 'icon' => '📄'),
-        'other'      => array('label' => __('Diğer Belgeler', 'workflow-system'), 'icon' => '📂'),
+        'diploma'    => array('label' => __('Diploma', WFS_TEXT_DOMAIN), 'icon' => '🎓'),
+        'transcript' => array('label' => __('Transkript', WFS_TEXT_DOMAIN), 'icon' => '📜'),
+        'sgk'        => array('label' => __('SGK Hizmet Dökümü', WFS_TEXT_DOMAIN), 'icon' => '📋'),
+        'cv'         => array('label' => __('CV', WFS_TEXT_DOMAIN), 'icon' => '📄'),
+        'other'      => array('label' => __('Diğer Belgeler', WFS_TEXT_DOMAIN), 'icon' => '📂'),
     );
 }
 
@@ -86,15 +86,19 @@ function wfs_format_phone_for_actions($phone)
 <div class="wrap">
     <div class="wfs-header">
         <div>
-            <h1>İş Akışı Yönetim Sistemi</h1>
+            <h1>Eu WorkFlow</h1>
             <p>Kayıt yönetimi, doküman kontrolü ve görüşme planlaması tek ekranda.</p>
         </div>
     </div>
 
     <div class="wfs-filters-container">
-        <div class="wfs-filter-item">
+        <div class="wfs-filter-item wfs-filter-item--search">
             <label>🔍 Gerçek Zamanlı Arama</label>
-            <input type="text" id="wfs-search" class="wfs-input" placeholder="İsim, telefon veya e-posta ile arayın" value="<?php echo esc_attr($active_filters['search']); ?>">
+            <div class="wfs-search-wrapper">
+                <input type="text" id="wfs-search" class="wfs-input" placeholder="İsim, telefon veya e-posta ile arayın" value="<?php echo esc_attr($active_filters['search']); ?>" autocomplete="off">
+                <button type="button" id="wfs-search-button" class="wfs-btn wfs-btn-secondary">Ara</button>
+                <div id="wfs-search-suggestions" class="wfs-search-suggestions" role="listbox" aria-hidden="true"></div>
+            </div>
         </div>
         <div class="wfs-filter-item">
             <label>📊 Statü</label>
@@ -119,25 +123,24 @@ function wfs_format_phone_for_actions($phone)
     <div class="wfs-add-record-section">
         <div class="wfs-section-title">
             <h3>➕ Yeni Kayıt Oluştur</h3>
-            <p>Form builder olmadan, sabit alanlarla hızlı kayıt.</p>
         </div>
         <form id="wfs-create-record-form" enctype="multipart/form-data">
             <div class="wfs-form-grid">
                 <div class="wfs-form-group">
-                    <label>Ad *</label>
-                    <input type="text" name="first_name" required>
+                    <label>Ad</label>
+                    <input type="text" name="first_name">
                 </div>
                 <div class="wfs-form-group">
-                    <label>Soyad *</label>
-                    <input type="text" name="last_name" required>
+                    <label>Soyad</label>
+                    <input type="text" name="last_name">
                 </div>
                 <div class="wfs-form-group">
-                    <label>E-posta *</label>
-                    <input type="email" name="email" required>
+                    <label>E-posta</label>
+                    <input type="email" name="email">
                 </div>
                 <div class="wfs-form-group">
-                    <label>Telefon *</label>
-                    <input type="tel" name="phone" required>
+                    <label>Telefon</label>
+                    <input type="tel" name="phone">
                 </div>
                 <div class="wfs-form-group">
                     <label>Yaş</label>
@@ -163,24 +166,10 @@ function wfs_format_phone_for_actions($phone)
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="wfs-form-group wfs-form-group--full">
-                    <label class="wfs-checkbox">
-                        <input type="checkbox" name="interview_required" value="1">
-                        <span>Sesli/Görüntülü görüşme gerekli</span>
-                    </label>
-                </div>
-                <div class="wfs-form-group">
-                    <label>Görüşme Tarihi</label>
-                    <input type="datetime-local" name="interview_at">
-                </div>
-                <div class="wfs-form-group">
-                    <label>Ödeme Tutarı (statü tamamlandığında)</label>
-                    <input type="text" name="payment_amount" placeholder="Örn: 35000">
-                </div>
             </div>
 
             <div class="wfs-files-upload">
-                <h4>📎 Zorunlu Dokümanlar</h4>
+                <h4>📎 Dokümanlar</h4>
                 <div class="wfs-form-grid">
                     <div class="wfs-form-group">
                         <label><?php echo esc_html($file_categories['diploma']['label']); ?></label>
@@ -222,7 +211,7 @@ function wfs_format_phone_for_actions($phone)
                 <?php
                 $status_config = wfs_get_status_config($record->overall_status, $status_settings);
                 $initials = strtoupper(mb_substr($record->first_name, 0, 1) . mb_substr($record->last_name, 0, 1));
-                $assigned_display = $record->assigned_name ? esc_html($record->assigned_name) : __('Henüz atama yapılmadı.', 'workflow-system');
+                $assigned_display = $record->assigned_name ? esc_html($record->assigned_name) : __('Henüz atama yapılmadı.', WFS_TEXT_DOMAIN);
                 $categories_display = wfs_prepare_category_display($record->id, $grouped_files, $file_categories);
                 $phone_actions = wfs_format_phone_for_actions($record->phone);
                 $full_name = trim($record->first_name . ' ' . $record->last_name);
@@ -290,8 +279,8 @@ function wfs_format_phone_for_actions($phone)
         <?php else: ?>
             <div class="wfs-empty-state">
                 <div class="wfs-empty-icon">📋</div>
-                <h3><?php esc_html_e('Henüz kayıt yok', 'workflow-system'); ?></h3>
-                <p><?php esc_html_e('Yeni bir kayıt oluşturduğunuzda burada listelenecek.', 'workflow-system'); ?></p>
+                <h3><?php esc_html_e('Henüz kayıt yok', WFS_TEXT_DOMAIN); ?></h3>
+                <p><?php esc_html_e('Yeni bir kayıt oluşturduğunuzda burada listelenecek.', WFS_TEXT_DOMAIN); ?></p>
             </div>
         <?php endif; ?>
     </div>

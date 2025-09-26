@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['save_permissions']) && check_admin_referer('wfs_save_permissions')) {
         $hide_wp_menus = isset($_POST['hide_wp_menus']);
         update_option('wfs_hide_wp_menus', $hide_wp_menus);
-        echo '<div class="notice notice-success"><p>' . esc_html__('Ayarlar güncellendi.', 'workflow-system') . '</p></div>';
+        echo '<div class="notice notice-success"><p>' . esc_html__('Ayarlar güncellendi.', WFS_TEXT_DOMAIN) . '</p></div>';
     }
 
     if (isset($_POST['save_statuses']) && check_admin_referer('wfs_save_statuses')) {
@@ -38,15 +38,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         update_option('wfs_status_settings', $sanitized);
         $editable_statuses = $sanitized;
-        echo '<div class="notice notice-success"><p>' . esc_html__('Statüler kaydedildi.', 'workflow-system') . '</p></div>';
+        echo '<div class="notice notice-success"><p>' . esc_html__('Statüler kaydedildi.', WFS_TEXT_DOMAIN) . '</p></div>';
     }
 }
 ?>
 
 <div class="wrap">
     <div class="wfs-settings-header">
-        <h1>⚙️ İş Akışı Ayarları</h1>
-        <p><?php esc_html_e('Sistem görünürlüğünü ve statü yapılandırmasını yönetin.', 'workflow-system'); ?></p>
+        <h1>⚙️ Eu WorkFlow Ayarları</h1>
+        <p><?php esc_html_e('Sistem görünürlüğünü ve statü yapılandırmasını yönetin.', WFS_TEXT_DOMAIN); ?></p>
     </div>
 
     <div class="wfs-settings-card">
@@ -55,10 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php wp_nonce_field('wfs_save_permissions'); ?>
             <label class="wfs-settings-checkbox">
                 <input type="checkbox" name="hide_wp_menus" <?php checked($hide_wp_menus); ?>>
-                <span><?php esc_html_e('İş akışı rollerinden varsayılan WordPress menülerini gizle', 'workflow-system'); ?></span>
+                <span><?php esc_html_e('İş akışı rollerinden varsayılan WordPress menülerini gizle', WFS_TEXT_DOMAIN); ?></span>
             </label>
-            <p class="description"><?php esc_html_e('Yalnızca yönetici olmayan kullanıcılar etkilenir.', 'workflow-system'); ?></p>
-            <button type="submit" name="save_permissions" class="button button-primary"><?php esc_html_e('Kaydet', 'workflow-system'); ?></button>
+            <p class="description"><?php esc_html_e('Yalnızca yönetici olmayan kullanıcılar etkilenir.', WFS_TEXT_DOMAIN); ?></p>
+            <button type="submit" name="save_permissions" class="button button-primary"><?php esc_html_e('Kaydet', WFS_TEXT_DOMAIN); ?></button>
         </form>
     </div>
 
@@ -69,11 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <table class="widefat fixed wfs-status-table">
                 <thead>
                     <tr>
-                        <th><?php esc_html_e('Slug', 'workflow-system'); ?></th>
-                        <th><?php esc_html_e('Etiket', 'workflow-system'); ?></th>
-                        <th><?php esc_html_e('Renk', 'workflow-system'); ?></th>
-                        <th><?php esc_html_e('Arkaplan', 'workflow-system'); ?></th>
-                        <th><?php esc_html_e('Önizleme', 'workflow-system'); ?></th>
+                        <th><?php esc_html_e('Slug', WFS_TEXT_DOMAIN); ?></th>
+                        <th><?php esc_html_e('Etiket', WFS_TEXT_DOMAIN); ?></th>
+                        <th><?php esc_html_e('Renk', WFS_TEXT_DOMAIN); ?></th>
+                        <th><?php esc_html_e('Arkaplan', WFS_TEXT_DOMAIN); ?></th>
+                        <th><?php esc_html_e('Önizleme', WFS_TEXT_DOMAIN); ?></th>
                         <th></th>
                     </tr>
                 </thead>
@@ -86,19 +86,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <td><input type="color" name="statuses[][color]" value="<?php echo esc_attr($data['color']); ?>"></td>
                                 <td><input type="color" name="statuses[][bg]" value="<?php echo esc_attr($data['bg']); ?>"></td>
                                 <td><span class="wfs-status-preview" style="background: <?php echo esc_attr($data['bg']); ?>; color: <?php echo esc_attr($data['color']); ?>;"><?php echo esc_html($data['label']); ?></span></td>
-                                <td><button type="button" class="button-link-delete wfs-remove-status"><?php esc_html_e('Sil', 'workflow-system'); ?></button></td>
+                                <td><button type="button" class="button-link-delete wfs-remove-status"><?php esc_html_e('Sil', WFS_TEXT_DOMAIN); ?></button></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr class="wfs-status-empty">
-                            <td colspan="6"><?php esc_html_e('Henüz statü tanımı yok. Yeni satır ekleyebilirsiniz.', 'workflow-system'); ?></td>
+                            <td colspan="6"><?php esc_html_e('Henüz statü tanımı yok. Yeni satır ekleyebilirsiniz.', WFS_TEXT_DOMAIN); ?></td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
             <div class="wfs-status-actions">
-                <button type="button" class="button" id="wfs-add-status"><?php esc_html_e('Yeni Statü Ekle', 'workflow-system'); ?></button>
-                <button type="submit" name="save_statuses" class="button button-primary"><?php esc_html_e('Statüleri Kaydet', 'workflow-system'); ?></button>
+                <button type="button" class="button" id="wfs-add-status"><?php esc_html_e('Yeni Statü Ekle', WFS_TEXT_DOMAIN); ?></button>
+                <button type="submit" name="save_statuses" class="button button-primary"><?php esc_html_e('Statüleri Kaydet', WFS_TEXT_DOMAIN); ?></button>
             </div>
         </form>
     </div>
@@ -171,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <td><input type="color" name="statuses[][color]" value="#2563eb"></td>
                 <td><input type="color" name="statuses[][bg]" value="#dbeafe"></td>
                 <td><span class="wfs-status-preview" style="background: #dbeafe; color: #2563eb;">Önizleme</span></td>
-                <td><button type="button" class="button-link-delete wfs-remove-status"><?php echo esc_js(__('Sil', 'workflow-system')); ?></button></td>
+                <td><button type="button" class="button-link-delete wfs-remove-status"><?php echo esc_js(__('Sil', WFS_TEXT_DOMAIN)); ?></button></td>
             </tr>`;
         $('#wfs-status-rows').append(row);
         $('#wfs-status-rows .wfs-status-empty').remove();
@@ -180,7 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $(document).on('click', '.wfs-remove-status', function() {
         $(this).closest('tr').remove();
         if (!$('#wfs-status-rows tr').length) {
-            $('#wfs-status-rows').append('<tr class="wfs-status-empty"><td colspan="6"><?php echo esc_js(__('Henüz statü tanımı yok. Yeni satır ekleyebilirsiniz.', 'workflow-system')); ?></td></tr>');
+            $('#wfs-status-rows').append('<tr class="wfs-status-empty"><td colspan="6"><?php echo esc_js(__('Henüz statü tanımı yok. Yeni satır ekleyebilirsiniz.', WFS_TEXT_DOMAIN)); ?></td></tr>');
         }
     });
 
