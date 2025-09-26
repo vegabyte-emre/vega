@@ -8,6 +8,7 @@ $assigned_user = $record->assigned_to ? get_user_by('id', $record->assigned_to) 
 $status_config = wfs_get_status_config($record->overall_status, $status_settings);
 $can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
 $can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
+$can_manage = !empty($record->can_manage);
 $interview_required = intval($record->interview_required) === 1;
 $interview_completed = intval($record->interview_completed) === 1;
 $interview_label = $interview_required ? __('Evet', WFS_TEXT_DOMAIN) : __('Hayır', WFS_TEXT_DOMAIN);
@@ -15,7 +16,65 @@ $interview_date = $record->interview_at ? date_i18n('d.m.Y H:i', strtotime($reco
 $payment_amount = floatval($record->payment_amount);
 $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ',', '.') : '';
 ?>
-<div class="wfs-record-details" data-record-id="<?php echo $record_id; ?>" data-status="<?php echo esc_attr($record->overall_status); ?>" style="display: none;">
+<div class="wfs-record-details"
+    data-record-id="<?php echo $record_id; ?>"
+    data-status="<?php echo esc_attr($record->overall_status); ?>"
+    data-first-name="<?php echo esc_attr($record->first_name); ?>"
+    data-last-name="<?php echo esc_attr($record->last_name); ?>"
+    data-email="<?php echo esc_attr($record->email); ?>"
+    data-phone="<?php echo esc_attr($record->phone); ?>"
+    data-education="<?php echo esc_attr($record->education_level); ?>"
+    data-department="<?php echo esc_attr($record->department); ?>"
+    data-job-title="<?php echo esc_attr($record->job_title); ?>"
+    data-age="<?php echo esc_attr($record->age); ?>"
+    data-can-manage="<?php echo $can_manage ? '1' : '0'; ?>"
+    style="display: none;">
+    <?php if ($can_manage): ?>
+        <div class="wfs-details-toolbar">
+            <button class="wfs-btn wfs-btn-secondary wfs-edit-record" data-record-id="<?php echo $record_id; ?>"><?php esc_html_e('Düzenle', WFS_TEXT_DOMAIN); ?></button>
+            <button class="wfs-btn wfs-btn-danger wfs-delete-record" data-record-id="<?php echo $record_id; ?>"><?php esc_html_e('Kaydı Sil', WFS_TEXT_DOMAIN); ?></button>
+        </div>
+        <form class="wfs-edit-record-form" data-record-id="<?php echo $record_id; ?>" style="display: none;">
+            <div class="wfs-form-grid">
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Ad', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="text" name="first_name" value="<?php echo esc_attr($record->first_name); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Soyad', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="text" name="last_name" value="<?php echo esc_attr($record->last_name); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('E-posta', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="email" name="email" value="<?php echo esc_attr($record->email); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Telefon', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="tel" name="phone" value="<?php echo esc_attr($record->phone); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Yaş', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="number" name="age" value="<?php echo esc_attr($record->age); ?>" min="0" max="120">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Eğitim Durumu', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="text" name="education_level" value="<?php echo esc_attr($record->education_level); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Bölüm', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="text" name="department" value="<?php echo esc_attr($record->department); ?>">
+                </div>
+                <div class="wfs-form-group">
+                    <label><?php esc_html_e('Meslek', WFS_TEXT_DOMAIN); ?></label>
+                    <input type="text" name="job_title" value="<?php echo esc_attr($record->job_title); ?>">
+                </div>
+            </div>
+            <div class="wfs-edit-form-actions">
+                <button type="button" class="wfs-btn wfs-btn-secondary wfs-cancel-edit" data-record-id="<?php echo $record_id; ?>"><?php esc_html_e('İptal', WFS_TEXT_DOMAIN); ?></button>
+                <button type="submit" class="wfs-btn wfs-btn-primary wfs-save-record" data-record-id="<?php echo $record_id; ?>"><?php esc_html_e('Kaydet', WFS_TEXT_DOMAIN); ?></button>
+            </div>
+        </form>
+    <?php endif; ?>
     <div class="wfs-details-grid">
         <section class="wfs-info-section">
             <h4>👤 <?php esc_html_e('Kişi Kartı', WFS_TEXT_DOMAIN); ?></h4>
@@ -91,6 +150,12 @@ $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ','
                         <?php else: ?>
                             <p class="wfs-documents-empty"><?php esc_html_e('Doküman eklenmedi.', WFS_TEXT_DOMAIN); ?></p>
                         <?php endif; ?>
+                        <div class="wfs-documents-upload">
+                            <label class="wfs-upload-label">
+                                <span><?php esc_html_e('Dosya Yükle', WFS_TEXT_DOMAIN); ?></span>
+                                <input type="file" class="wfs-documents-upload-input" data-record-id="<?php echo $record_id; ?>" data-category="<?php echo esc_attr($category_slug); ?>" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" <?php echo $can_manage ? '' : 'disabled'; ?>>
+                            </label>
+                        </div>
                     </div>
                 <?php endforeach; ?>
             </div>

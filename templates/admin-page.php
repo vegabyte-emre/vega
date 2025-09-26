@@ -11,6 +11,8 @@ $grouped_files = isset($grouped_files) && is_array($grouped_files) ? $grouped_fi
 $active_filters = isset($active_filters) && is_array($active_filters)
     ? wp_parse_args($active_filters, array('search' => '', 'status' => '', 'rep' => 0))
     : array('search' => '', 'status' => '', 'rep' => 0);
+$can_assign_records = current_user_can('manage_options') || current_user_can('wfs_assign_records');
+$can_review_files = current_user_can('manage_options') || current_user_can('wfs_review_files');
 
 if (empty($status_settings)) {
     $status_settings = array(
@@ -123,6 +125,7 @@ function wfs_format_phone_for_actions($phone)
     <div class="wfs-add-record-section">
         <div class="wfs-section-title">
             <h3>➕ Yeni Kayıt Oluştur</h3>
+            <button type="button" class="wfs-btn-link wfs-toggle-create" aria-expanded="true" aria-controls="wfs-create-record-form">Küçült</button>
         </div>
         <form id="wfs-create-record-form" enctype="multipart/form-data">
             <div class="wfs-form-grid">
@@ -205,6 +208,38 @@ function wfs_format_phone_for_actions($phone)
         <p>Yükleniyor...</p>
     </div>
 
+    <?php if ($can_assign_records): ?>
+        <div class="wfs-bulk-actions" id="wfs-bulk-actions" aria-hidden="true">
+            <div class="wfs-bulk-actions__left">
+                <label class="wfs-bulk-select-all">
+                    <input type="checkbox" id="wfs-bulk-select-all">
+                    <span><?php esc_html_e('Tümünü Seç', WFS_TEXT_DOMAIN); ?></span>
+                </label>
+                <span class="wfs-bulk-count" id="wfs-bulk-count"><?php esc_html_e('0 kayıt seçildi', WFS_TEXT_DOMAIN); ?></span>
+            </div>
+            <div class="wfs-bulk-actions__controls">
+                <div class="wfs-bulk-control">
+                    <select id="wfs-bulk-status" class="wfs-select">
+                        <option value=""><?php esc_html_e('Statü Seçin', WFS_TEXT_DOMAIN); ?></option>
+                        <?php foreach ($status_settings as $status_key => $status_info): ?>
+                            <option value="<?php echo esc_attr($status_key); ?>"><?php echo esc_html($status_info['label']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" id="wfs-bulk-status-apply" class="wfs-btn wfs-btn-primary"><?php esc_html_e('Statü Güncelle', WFS_TEXT_DOMAIN); ?></button>
+                </div>
+                <div class="wfs-bulk-control">
+                    <select id="wfs-bulk-assign" class="wfs-select">
+                        <option value=""><?php esc_html_e('Kullanıcı Seçin', WFS_TEXT_DOMAIN); ?></option>
+                        <?php foreach ($assignable_users as $user): ?>
+                            <option value="<?php echo esc_attr($user->ID); ?>"><?php echo esc_html($user->display_name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" id="wfs-bulk-assign-apply" class="wfs-btn wfs-btn-secondary"><?php esc_html_e('Atama Yap', WFS_TEXT_DOMAIN); ?></button>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <div id="wfs-records-container" class="wfs-records">
         <?php if (!empty($records)): ?>
             <?php foreach ($records as $record): ?>
@@ -216,8 +251,23 @@ function wfs_format_phone_for_actions($phone)
                 $phone_actions = wfs_format_phone_for_actions($record->phone);
                 $full_name = trim($record->first_name . ' ' . $record->last_name);
                 ?>
-                <div class="wfs-record-card" data-record-id="<?php echo intval($record->id); ?>" data-name="<?php echo esc_attr($full_name); ?>" data-phone="<?php echo esc_attr($record->phone); ?>" data-email="<?php echo esc_attr($record->email); ?>">
+                <div class="wfs-record-card"
+                    data-record-id="<?php echo intval($record->id); ?>"
+                    data-name="<?php echo esc_attr($full_name); ?>"
+                    data-phone="<?php echo esc_attr($record->phone); ?>"
+                    data-email="<?php echo esc_attr($record->email); ?>"
+                    data-first-name="<?php echo esc_attr($record->first_name); ?>"
+                    data-last-name="<?php echo esc_attr($record->last_name); ?>"
+                    data-education="<?php echo esc_attr($record->education_level); ?>"
+                    data-department="<?php echo esc_attr($record->department); ?>"
+                    data-job-title="<?php echo esc_attr($record->job_title); ?>"
+                    data-age="<?php echo esc_attr($record->age); ?>"
+                    data-status="<?php echo esc_attr($record->overall_status); ?>"
+                    data-can-manage="<?php echo !empty($record->can_manage) ? '1' : '0'; ?>">
                     <div class="wfs-card-header">
+                        <div class="wfs-card-select">
+                            <input type="checkbox" class="wfs-bulk-checkbox" value="<?php echo intval($record->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Kaydı seç: %s', WFS_TEXT_DOMAIN), $full_name)); ?>">
+                        </div>
                         <div class="wfs-user-info">
                             <div class="wfs-avatar" aria-hidden="true"><?php echo esc_html($initials ?: '👤'); ?></div>
                             <div>
@@ -489,6 +539,74 @@ function wfs_format_phone_for_actions($phone)
     background: var(--wfs-status-color);
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25);
     animation: wfs-pulse 2s ease-in-out infinite;
+}
+
+.wfs-add-record-section.is-collapsed form {
+    display: none;
+}
+
+.wfs-toggle-create {
+    border: none;
+    background: transparent;
+    color: #2563eb;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.wfs-toggle-create:hover {
+    text-decoration: underline;
+}
+
+.wfs-details-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.wfs-edit-record-form {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.wfs-edit-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.wfs-btn-danger {
+    background: #ef4444;
+    color: #fff;
+}
+
+.wfs-btn-danger:hover {
+    background: #dc2626;
+}
+
+.wfs-documents-upload {
+    margin-top: 0.75rem;
+}
+
+.wfs-upload-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    color: #3730a3;
+    font-weight: 600;
+    cursor: pointer;
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.wfs-upload-label input[type="file"] {
+    display: none;
 }
 
 @keyframes wfs-pulse {

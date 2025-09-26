@@ -127,6 +127,20 @@
     gap: 1.5rem;
 }
 
+.wfs-card-select {
+    display: flex;
+    align-items: flex-start;
+    padding-top: 0.25rem;
+}
+
+.wfs-card-select input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5f5;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
 .wfs-user-info {
     display: flex;
     gap: 1rem;
@@ -909,6 +923,111 @@
     color: #64748b;
 }
 
+.wfs-add-record-section.is-collapsed form {
+    display: none;
+}
+
+.wfs-bulk-actions {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
+    margin-bottom: 1.5rem;
+}
+
+.wfs-bulk-actions.is-active {
+    display: flex;
+}
+
+.wfs-bulk-actions__left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.wfs-bulk-select-all {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.wfs-bulk-select-all input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.wfs-bulk-actions__controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.wfs-bulk-control {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.wfs-btn-danger {
+    background: #ef4444;
+    color: #fff;
+}
+
+.wfs-btn-danger:hover {
+    background: #dc2626;
+    color: #fff;
+}
+
+.wfs-details-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.wfs-edit-record-form {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.wfs-edit-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.wfs-documents-upload {
+    margin-top: 0.75rem;
+}
+
+.wfs-upload-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    color: #3730a3;
+    font-weight: 600;
+    cursor: pointer;
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.wfs-upload-label input[type="file"] {
+    display: none;
+}
+
 /* Empty State */
 .wfs-empty-state {
     text-align: center;
@@ -937,6 +1056,27 @@
 
     .wfs-doc-summary {
         justify-content: flex-start;
+    }
+
+    .wfs-bulk-actions {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .wfs-bulk-actions__controls {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .wfs-bulk-control {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .wfs-bulk-control .wfs-select {
+        flex: 1 1 auto;
     }
 }
 

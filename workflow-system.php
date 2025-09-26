@@ -25,6 +25,72 @@ define('WFS_TEXT_DOMAIN', 'eu-workflow');
 class WorkflowSystem {
     private $file_categories = array();
 
+    private function user_has_full_access() {
+        return current_user_can('manage_options') || current_user_can('wfs_manage_all');
+    }
+
+    private function user_can_view_record($record) {
+        if (!$record) {
+            return false;
+        }
+
+        if ($this->user_has_full_access()) {
+            return true;
+        }
+
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            return false;
+        }
+
+        return intval($record->assigned_to) === intval($user_id);
+    }
+
+    private function user_can_manage_record($record) {
+        if (!$record) {
+            return false;
+        }
+
+        if ($this->user_has_full_access()) {
+            return true;
+        }
+
+        if (!current_user_can('wfs_assign_records')) {
+            return false;
+        }
+
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            return false;
+        }
+
+        return intval($record->assigned_to) === intval($user_id);
+    }
+
+    private function get_record_row($record_id) {
+        global $wpdb;
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}wfs_records WHERE id = %d",
+            $record_id
+        ));
+    }
+
+    private function prepare_record_for_response($record) {
+        if (!$record) {
+            return null;
+        }
+
+        $record->can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
+        $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
+        $record->can_manage = $this->user_can_manage_record($record);
+        $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
+        $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
+        $record->representative_note = (string) ($record->representative_note ?? '');
+
+        return $record;
+    }
+
     public function __construct() {
         add_action('init', array($this, 'init'));
         register_activation_hook(__FILE__, array($this, 'activate'));
@@ -218,6 +284,7 @@ class WorkflowSystem {
             'role__in' => array(
                 'administrator',
                 'wfs_superadmin',
+                'wfs_manager',
                 'wfs_representative',
                 'wfs_consultant',
                 'editor',
@@ -281,11 +348,7 @@ class WorkflowSystem {
             return null;
         }
 
-        $record->can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
-        $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
-        $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
-        $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
-        $record->representative_note = (string) ($record->representative_note ?? '');
+        $record = $this->prepare_record_for_response($record);
 
         $files = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d",
@@ -330,6 +393,11 @@ class WorkflowSystem {
         add_action('wp_ajax_wfs_update_record_status', array($this, 'ajax_update_record_status'));
         add_action('wp_ajax_wfs_assign_record', array($this, 'ajax_assign_record'));
         add_action('wp_ajax_wfs_update_rep_note', array($this, 'ajax_update_rep_note'));
+        add_action('wp_ajax_wfs_update_record', array($this, 'ajax_update_record'));
+        add_action('wp_ajax_wfs_delete_record', array($this, 'ajax_delete_record'));
+        add_action('wp_ajax_wfs_upload_record_file', array($this, 'ajax_upload_record_file'));
+        add_action('wp_ajax_wfs_bulk_update_status', array($this, 'ajax_bulk_update_status'));
+        add_action('wp_ajax_wfs_bulk_assign_records', array($this, 'ajax_bulk_assign_records'));
 
         // Admin paneli
         if (is_admin()) {
@@ -444,7 +512,20 @@ class WorkflowSystem {
                 'wfs_manage_users' => true,
             ));
         }
-        
+
+        $role = get_role('wfs_manager');
+        if (!$role) {
+            add_role('wfs_manager', __('Eu WorkFlow Yöneticisi', WFS_TEXT_DOMAIN), array(
+                'read' => true,
+                'edit_posts' => false,
+                'delete_posts' => false,
+                'wfs_manage_all' => true,
+                'wfs_assign_records' => true,
+                'wfs_create_records' => true,
+                'wfs_review_files' => true,
+            ));
+        }
+
         $role = get_role('wfs_representative');
         if (!$role) {
             add_role('wfs_representative', __('Eu WorkFlow Temsilcisi', WFS_TEXT_DOMAIN), array(
@@ -609,7 +690,13 @@ class WorkflowSystem {
                 'approved' => __('Onaylı', WFS_TEXT_DOMAIN),
                 'rejected' => __('Reddedildi', WFS_TEXT_DOMAIN),
                 'note_saved' => __('Not kaydedildi', WFS_TEXT_DOMAIN),
-                'note_error' => __('Not kaydedilemedi', WFS_TEXT_DOMAIN)
+                'note_error' => __('Not kaydedilemedi', WFS_TEXT_DOMAIN),
+                'edit_saved' => __('Kayıt bilgileri güncellendi', WFS_TEXT_DOMAIN),
+                'delete_confirm' => __('Bu kaydı silmek istediğinize emin misiniz?', WFS_TEXT_DOMAIN),
+                'delete_success' => __('Kayıt silindi', WFS_TEXT_DOMAIN),
+                'bulk_status_success' => __('Seçilen kayıtların statüsü güncellendi', WFS_TEXT_DOMAIN),
+                'bulk_assign_success' => __('Seçilen kayıtlara atama yapıldı', WFS_TEXT_DOMAIN),
+                'upload_success' => __('Dosya yüklendi', WFS_TEXT_DOMAIN)
             )
         ));
     }
@@ -726,12 +813,22 @@ class WorkflowSystem {
         $representative_filter = intval($_POST['representative_filter'] ?? 0);
         
         $offset = ($page - 1) * $per_page;
-        
+
         $where_conditions = array('1=1');
         $where_values = array();
-        
+
         $this->apply_search_filters($search, $where_conditions, $where_values, 'r');
-        
+
+        if (!$this->user_has_full_access()) {
+            $current_user_id = get_current_user_id();
+            if (!$current_user_id) {
+                wp_send_json_success(array('items' => array()));
+                return;
+            }
+            $where_conditions[] = 'r.assigned_to = %d';
+            $where_values[] = $current_user_id;
+        }
+
         if (!empty($status_filter)) {
             $where_conditions[] = "overall_status = %s";
             $where_values[] = $status_filter;
@@ -776,11 +873,7 @@ class WorkflowSystem {
         foreach ($results as $record) {
             $record_files = $files_by_record[$record->id] ?? array();
             $grouped = $this->group_files_by_category($record_files);
-            $record->can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
-            $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
-            $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
-            $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
-            $record->representative_note = (string) ($record->representative_note ?? '');
+            $record = $this->prepare_record_for_response($record);
 
             $records_response[] = array(
                 'record' => $record,
@@ -823,6 +916,16 @@ class WorkflowSystem {
             return;
         }
 
+        if (!$this->user_has_full_access()) {
+            $current_user_id = get_current_user_id();
+            if (!$current_user_id) {
+                wp_send_json_success(array('suggestions' => array()));
+                return;
+            }
+            $where_conditions[] = 'r.assigned_to = %d';
+            $where_values[] = $current_user_id;
+        }
+
         $query = "SELECT r.id, r.first_name, r.last_name, r.email
                   FROM {$wpdb->prefix}wfs_records r
                   WHERE " . implode(' AND ', $where_conditions) . "
@@ -861,17 +964,34 @@ class WorkflowSystem {
             return;
         }
 
-        global $wpdb;
-        
         $file_id = intval($_POST['file_id'] ?? 0);
         $status = sanitize_text_field($_POST['status'] ?? '');
         $notes = sanitize_textarea_field($_POST['notes'] ?? '');
-        
+
         if (!in_array($status, array('approved', 'rejected', 'pending'))) {
             wp_send_json_error('Geçersiz statü');
             return;
         }
-        
+
+        global $wpdb;
+
+        $file = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}wfs_files WHERE id = %d",
+            $file_id
+        ));
+
+        if (!$file) {
+            wp_send_json_error('Dosya bulunamadı');
+            return;
+        }
+
+        $record = $this->get_record_row($file->record_id);
+
+        if (!$record || !$this->user_can_view_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
         $result = $wpdb->update(
             $wpdb->prefix . 'wfs_files',
             array(
@@ -884,16 +1004,18 @@ class WorkflowSystem {
             array('%s', '%s', '%d', '%s'),
             array('%d')
         );
-        
+
         if ($result !== false) {
             // Aktivite kaydı
-            $file = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}wfs_files WHERE id = %d", $file_id));
-            if ($file) {
-                $this->log_activity($file->record_id, get_current_user_id(), 'file_status_updated',
-                    "Dosya statüsü güncellendi: {$file->file_name}", '', $status);
-            }
-            
-            wp_send_json_success('Statü güncellendi');
+            $this->log_activity($file->record_id, get_current_user_id(), 'file_status_updated',
+                "Dosya statüsü güncellendi: {$file->file_name}", '', $status);
+
+            $payload = $this->build_record_payload($file->record_id);
+
+            wp_send_json_success(array(
+                'message' => 'Statü güncellendi',
+                'payload' => $payload,
+            ));
         } else {
             wp_send_json_error('Güncelleme hatası: ' . $wpdb->last_error);
         }
@@ -915,32 +1037,23 @@ class WorkflowSystem {
             return;
         }
 
-        global $wpdb;
-
         $record_id = intval($_POST['record_id'] ?? 0);
 
-        // Kayıt bilgilerini getir
-        $record = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}wfs_records WHERE id = %d",
-            $record_id
-        ));
+        $record = $this->get_record_row($record_id);
 
-        if (!$record) {
+        if (!$record || !$this->user_can_view_record($record)) {
             wp_send_json_error('Kayıt bulunamadı');
             return;
         }
 
-        // Dosyaları getir
-        $files = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d ORDER BY uploaded_at DESC",
-            $record_id
-        ));
+        $payload = $this->build_record_payload($record_id);
 
-        wp_send_json_success(array(
-            'record'      => $record,
-            'files'       => $files,
-            'files_by_category' => $this->group_files_by_category($files),
-        ));
+        if (!$payload) {
+            wp_send_json_error('Kayıt bulunamadı');
+            return;
+        }
+
+        wp_send_json_success($payload);
     }
 
     public function ajax_create_record() {
@@ -1062,6 +1175,12 @@ class WorkflowSystem {
             return;
         }
 
+        $record = $this->get_record_row($record_id);
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
         $updated = $wpdb->update(
             $wpdb->prefix . 'wfs_records',
             array(
@@ -1087,11 +1206,14 @@ class WorkflowSystem {
             $status
         );
 
+        $payload = $this->build_record_payload($record_id);
+
         wp_send_json_success(array(
             'status' => $status,
             'label'  => $statuses[$status]['label'],
             'color'  => $statuses[$status]['color'],
             'bg'     => $statuses[$status]['bg'],
+            'payload' => $payload,
         ));
     }
 
@@ -1105,8 +1227,6 @@ class WorkflowSystem {
             wp_send_json_error('Yetkiniz yok');
             return;
         }
-
-        global $wpdb;
 
         $record_id = intval($_POST['record_id'] ?? 0);
         $completed = isset($_POST['completed']) && intval($_POST['completed']) === 1 ? 1 : 0;
@@ -1123,6 +1243,15 @@ class WorkflowSystem {
             wp_send_json_error('Kayıt bulunamadı');
             return;
         }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
 
         $data = array(
             'interview_completed' => $completed,
@@ -1156,9 +1285,12 @@ class WorkflowSystem {
             $completed ? 'Görüşme tamamlandı olarak işaretlendi' : 'Görüşme tamamlanmadı olarak işaretlendi'
         );
 
+        $payload = $this->build_record_payload($record_id);
+
         wp_send_json_success(array(
             'completed' => $completed,
             'interview_at' => $interview_at,
+            'payload' => $payload,
         ));
     }
 
@@ -1173,18 +1305,18 @@ class WorkflowSystem {
             return;
         }
 
-        global $wpdb;
-
         $record_id = intval($_POST['record_id'] ?? 0);
         if (!$record_id) {
             wp_send_json_error('Kayıt bulunamadı');
             return;
         }
 
-        $record = $wpdb->get_row($wpdb->prepare(
-            "SELECT overall_status FROM {$wpdb->prefix}wfs_records WHERE id = %d",
-            $record_id
-        ));
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
 
         if (!$record) {
             wp_send_json_error('Kayıt bulunamadı');
@@ -1226,8 +1358,11 @@ class WorkflowSystem {
             $amount
         );
 
+        $payload = $this->build_record_payload($record_id);
+
         wp_send_json_success(array(
             'amount' => $amount,
+            'payload' => $payload,
         ));
     }
     public function ajax_assign_record() {
@@ -1241,8 +1376,6 @@ class WorkflowSystem {
             return;
         }
 
-        global $wpdb;
-
         $record_id = intval($_POST['record_id'] ?? 0);
         $assigned_to = intval($_POST['assigned_to'] ?? 0);
 
@@ -1250,6 +1383,15 @@ class WorkflowSystem {
             wp_send_json_error('Eksik bilgi');
             return;
         }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
 
         $user = get_user_by('id', $assigned_to);
         if (!$user) {
@@ -1279,8 +1421,11 @@ class WorkflowSystem {
                     "Kayıt atandı: {$assigned_user->display_name}");
             }
 
+            $payload = $this->build_record_payload($record_id);
+
             wp_send_json_success(array(
                 'assigned_name' => $assigned_user ? $assigned_user->display_name : '',
+                'payload' => $payload,
             ));
         } else {
             wp_send_json_error('Atama hatası: ' . $wpdb->last_error);
@@ -1298,8 +1443,6 @@ class WorkflowSystem {
             return;
         }
 
-        global $wpdb;
-
         $record_id = intval($_POST['record_id'] ?? 0);
         $note_raw  = wp_unslash($_POST['note'] ?? '');
         $note      = sanitize_textarea_field($note_raw);
@@ -1308,6 +1451,15 @@ class WorkflowSystem {
             wp_send_json_error('Kayıt bulunamadı');
             return;
         }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
 
         $updated = $wpdb->update(
             $wpdb->prefix . 'wfs_records',
@@ -1332,8 +1484,400 @@ class WorkflowSystem {
             'Temsilci notu güncellendi'
         );
 
+        $payload = $this->build_record_payload($record_id);
+
         wp_send_json_success(array(
             'note' => $note,
+            'payload' => $payload,
+        ));
+    }
+
+    public function ajax_update_record() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $record_id = intval($_POST['record_id'] ?? 0);
+
+        if (!$record_id) {
+            wp_send_json_error('Kayıt bulunamadı');
+            return;
+        }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $first_name = sanitize_text_field(wp_unslash($_POST['first_name'] ?? ''));
+        $last_name = sanitize_text_field(wp_unslash($_POST['last_name'] ?? ''));
+        $email = sanitize_email(wp_unslash($_POST['email'] ?? ''));
+        $phone = sanitize_text_field(wp_unslash($_POST['phone'] ?? ''));
+        $education_level = sanitize_text_field(wp_unslash($_POST['education_level'] ?? ''));
+        $department = sanitize_text_field(wp_unslash($_POST['department'] ?? ''));
+        $job_title = sanitize_text_field(wp_unslash($_POST['job_title'] ?? ''));
+        $age = intval($_POST['age'] ?? 0);
+
+        if ($first_name === '' || $last_name === '') {
+            wp_send_json_error(__('Ad ve soyad zorunludur.', WFS_TEXT_DOMAIN));
+            return;
+        }
+
+        if ($email && !is_email($email)) {
+            wp_send_json_error(__('Geçerli bir e-posta girin.', WFS_TEXT_DOMAIN));
+            return;
+        }
+
+        global $wpdb;
+
+        $data = array(
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => $email,
+            'phone' => $phone,
+            'education_level' => $education_level,
+            'department' => $department,
+            'job_title' => $job_title,
+            'updated_at' => current_time('mysql'),
+        );
+
+        $formats = array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+
+        $updated = $wpdb->update(
+            $wpdb->prefix . 'wfs_records',
+            $data,
+            array('id' => $record_id),
+            $formats,
+            array('%d')
+        );
+
+        if ($updated === false) {
+            wp_send_json_error('Kayıt güncellenemedi: ' . $wpdb->last_error);
+            return;
+        }
+
+        if ($age > 0) {
+            $age_result = $wpdb->update(
+                $wpdb->prefix . 'wfs_records',
+                array('age' => $age),
+                array('id' => $record_id),
+                array('%d'),
+                array('%d')
+            );
+        } else {
+            $age_result = $wpdb->query($wpdb->prepare(
+                "UPDATE {$wpdb->prefix}wfs_records SET age = NULL WHERE id = %d",
+                $record_id
+            ));
+        }
+
+        if ($age_result === false) {
+            wp_send_json_error('Yaş güncellenemedi: ' . $wpdb->last_error);
+            return;
+        }
+
+        $this->log_activity(
+            $record_id,
+            get_current_user_id(),
+            'record_updated',
+            'Kayıt bilgileri güncellendi'
+        );
+
+        $payload = $this->build_record_payload($record_id);
+
+        wp_send_json_success(array(
+            'payload' => $payload,
+        ));
+    }
+
+    public function ajax_delete_record() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $record_id = intval($_POST['record_id'] ?? 0);
+
+        if (!$record_id) {
+            wp_send_json_error('Kayıt bulunamadı');
+            return;
+        }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
+
+        $files = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d",
+            $record_id
+        ));
+
+        foreach ($files as $file) {
+            if (!empty($file->file_path) && file_exists($file->file_path)) {
+                @unlink($file->file_path);
+            }
+        }
+
+        $wpdb->delete($wpdb->prefix . 'wfs_files', array('record_id' => $record_id), array('%d'));
+        $wpdb->delete($wpdb->prefix . 'wfs_activities', array('record_id' => $record_id), array('%d'));
+
+        $deleted = $wpdb->delete($wpdb->prefix . 'wfs_records', array('id' => $record_id), array('%d'));
+
+        if ($deleted === false) {
+            wp_send_json_error('Kayıt silinemedi: ' . $wpdb->last_error);
+            return;
+        }
+
+        wp_send_json_success(array(
+            'record_id' => $record_id,
+        ));
+    }
+
+    public function ajax_upload_record_file() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $record_id = intval($_POST['record_id'] ?? 0);
+        $category = sanitize_key($_POST['category'] ?? 'other');
+
+        if (!$record_id || empty($_FILES['file'])) {
+            wp_send_json_error('Eksik bilgi');
+            return;
+        }
+
+        $record = $this->get_record_row($record_id);
+
+        if (!$record || !$this->user_can_manage_record($record)) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $file = $_FILES['file'];
+
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            wp_send_json_error('Dosya yüklenemedi');
+            return;
+        }
+
+        $upload_dir = wp_upload_dir();
+        $wfs_upload_dir = $upload_dir['basedir'] . '/workflow-system/';
+
+        if (!file_exists($wfs_upload_dir)) {
+            wp_mkdir_p($wfs_upload_dir);
+        }
+
+        $field_name = $category ? $category . '_file' : 'other_file';
+
+        $success = $this->process_single_file($record_id, $file, $wfs_upload_dir, $field_name);
+
+        if (!$success) {
+            wp_send_json_error('Dosya yüklenemedi');
+            return;
+        }
+
+        $payload = $this->build_record_payload($record_id);
+
+        wp_send_json_success(array(
+            'payload' => $payload,
+        ));
+    }
+
+    public function ajax_bulk_update_status() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $record_ids = $_POST['record_ids'] ?? array();
+        if (is_string($record_ids)) {
+            $record_ids = json_decode($record_ids, true);
+        }
+
+        if (!is_array($record_ids)) {
+            $record_ids = array();
+        }
+
+        $record_ids = array_unique(array_map('intval', $record_ids));
+
+        $status = sanitize_key($_POST['status'] ?? '');
+        $statuses = $this->get_status_settings();
+
+        if (!$record_ids || !isset($statuses[$status])) {
+            wp_send_json_error('Geçersiz istek');
+            return;
+        }
+
+        global $wpdb;
+
+        $updated_ids = array();
+        $payloads = array();
+
+        foreach ($record_ids as $record_id) {
+            $record = $this->get_record_row($record_id);
+
+            if (!$record || !$this->user_can_manage_record($record)) {
+                continue;
+            }
+
+            $result = $wpdb->update(
+                $wpdb->prefix . 'wfs_records',
+                array(
+                    'overall_status' => $status,
+                    'updated_at' => current_time('mysql'),
+                ),
+                array('id' => $record_id),
+                array('%s', '%s'),
+                array('%d')
+            );
+
+            if ($result === false) {
+                continue;
+            }
+
+            $this->log_activity(
+                $record_id,
+                get_current_user_id(),
+                'record_status_updated',
+                'Kayıt statüsü güncellendi',
+                '',
+                $status
+            );
+
+            $payload = $this->build_record_payload($record_id);
+            if ($payload) {
+                $payloads[] = $payload;
+                $updated_ids[] = $record_id;
+            }
+        }
+
+        if (empty($updated_ids)) {
+            wp_send_json_error('Güncellenecek kayıt bulunamadı');
+            return;
+        }
+
+        wp_send_json_success(array(
+            'updated' => $updated_ids,
+            'payloads' => $payloads,
+            'status' => $status,
+        ));
+    }
+
+    public function ajax_bulk_assign_records() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $record_ids = $_POST['record_ids'] ?? array();
+        if (is_string($record_ids)) {
+            $record_ids = json_decode($record_ids, true);
+        }
+
+        if (!is_array($record_ids)) {
+            $record_ids = array();
+        }
+
+        $record_ids = array_unique(array_map('intval', $record_ids));
+        $assigned_to = intval($_POST['assigned_to'] ?? 0);
+
+        if (!$record_ids || !$assigned_to) {
+            wp_send_json_error('Eksik bilgi');
+            return;
+        }
+
+        $user = get_user_by('id', $assigned_to);
+        if (!$user) {
+            wp_send_json_error('Kullanıcı bulunamadı');
+            return;
+        }
+
+        global $wpdb;
+
+        $updated_ids = array();
+        $payloads = array();
+
+        foreach ($record_ids as $record_id) {
+            $record = $this->get_record_row($record_id);
+
+            if (!$record || !$this->user_can_manage_record($record)) {
+                continue;
+            }
+
+            $result = $wpdb->update(
+                $wpdb->prefix . 'wfs_records',
+                array(
+                    'assigned_to' => $assigned_to,
+                    'updated_at' => current_time('mysql'),
+                ),
+                array('id' => $record_id),
+                array('%d', '%s'),
+                array('%d')
+            );
+
+            if ($result === false) {
+                continue;
+            }
+
+            $this->log_activity(
+                $record_id,
+                get_current_user_id(),
+                'record_assigned',
+                "Kayıt atandı: {$user->display_name}"
+            );
+
+            $this->send_assignment_email($record_id, $assigned_to);
+
+            $payload = $this->build_record_payload($record_id);
+            if ($payload) {
+                $payloads[] = $payload;
+                $updated_ids[] = $record_id;
+            }
+        }
+
+        if (empty($updated_ids)) {
+            wp_send_json_error('Atanacak kayıt bulunamadı');
+            return;
+        }
+
+        wp_send_json_success(array(
+            'updated' => $updated_ids,
+            'payloads' => $payloads,
+            'assigned_name' => $user->display_name,
         ));
     }
     
@@ -1409,6 +1953,16 @@ class WorkflowSystem {
             $values[] = $like;
         }
 
+        if (!$this->user_has_full_access()) {
+            $current_user_id = get_current_user_id();
+            if ($current_user_id) {
+                $conditions[] = 'r.assigned_to = %d';
+                $values[] = $current_user_id;
+            } else {
+                $conditions[] = '1=0';
+            }
+        }
+
         if ($status_filter !== '' && isset($status_settings[$status_filter])) {
             $conditions[] = 'r.overall_status = %s';
             $values[] = $status_filter;
@@ -1449,7 +2003,8 @@ class WorkflowSystem {
                 $files_by_record[$row->record_id][] = $row;
             }
 
-            foreach ($records as $record) {
+            foreach ($records as $index => $record) {
+                $records[$index] = $this->prepare_record_for_response($record);
                 $grouped_files[$record->id] = $this->group_files_by_category($files_by_record[$record->id] ?? array());
             }
         }
@@ -1537,6 +2092,7 @@ class WorkflowSystem {
         
         // Rolleri sil
         remove_role('wfs_superadmin');
+        remove_role('wfs_manager');
         remove_role('wfs_representative');
         remove_role('wfs_consultant');
         
