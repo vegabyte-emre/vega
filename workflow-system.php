@@ -142,6 +142,52 @@ class WorkflowSystem {
         return array_values(array_unique($parts));
     }
 
+    private function normalize_like_term($term) {
+        $map = array(
+            'ı' => 'i',
+            'İ' => 'i',
+            'I' => 'i',
+            'i̇' => 'i',
+            'ö' => 'o',
+            'Ö' => 'o',
+            'ü' => 'u',
+            'Ü' => 'u',
+            'ş' => 's',
+            'Ş' => 's',
+            'ğ' => 'g',
+            'Ğ' => 'g',
+            'ç' => 'c',
+            'Ç' => 'c'
+        );
+
+        return strtr($term, $map);
+    }
+
+    private function build_search_target($alias = 'r') {
+        $base = "LOWER(CONCAT_WS(' ', {$alias}.first_name, {$alias}.last_name, {$alias}.email, {$alias}.phone))";
+        $replacements = array(
+            'ı' => 'i',
+            'İ' => 'i',
+            'I' => 'i',
+            'ö' => 'o',
+            'Ö' => 'o',
+            'ü' => 'u',
+            'Ü' => 'u',
+            'ş' => 's',
+            'Ş' => 's',
+            'ğ' => 'g',
+            'Ğ' => 'g',
+            'ç' => 'c',
+            'Ç' => 'c'
+        );
+
+        foreach ($replacements as $from => $to) {
+            $base = "REPLACE($base, '$from', '$to')";
+        }
+
+        return $base;
+    }
+
     private function apply_search_filters($search, array &$where_conditions, array &$where_values, $alias = 'r') {
         global $wpdb;
 
@@ -151,11 +197,13 @@ class WorkflowSystem {
             return;
         }
 
-        $target = "LOWER(CONCAT_WS(' ', {$alias}.first_name, {$alias}.last_name, {$alias}.email, {$alias}.phone))";
+        $target = $this->build_search_target($alias);
 
         foreach ($terms as $term) {
+            $normalized_term = $this->normalize_like_term($term);
+            $like_term = '%' . $wpdb->esc_like($normalized_term) . '%';
             $where_conditions[] = "$target LIKE %s";
-            $where_values[] = '%' . $wpdb->esc_like($term) . '%';
+            $where_values[] = $like_term;
         }
 
         $digits = preg_replace('/[^0-9]+/', '', $search);
@@ -237,6 +285,7 @@ class WorkflowSystem {
         $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
         $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
         $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
+        $record->representative_note = (string) ($record->representative_note ?? '');
 
         $files = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}wfs_files WHERE record_id = %d",
@@ -280,6 +329,7 @@ class WorkflowSystem {
         add_action('wp_ajax_wfs_update_file_status', array($this, 'ajax_update_file_status'));
         add_action('wp_ajax_wfs_update_record_status', array($this, 'ajax_update_record_status'));
         add_action('wp_ajax_wfs_assign_record', array($this, 'ajax_assign_record'));
+        add_action('wp_ajax_wfs_update_rep_note', array($this, 'ajax_update_rep_note'));
 
         // Admin paneli
         if (is_admin()) {
@@ -329,6 +379,7 @@ class WorkflowSystem {
             interview_completed tinyint(1) DEFAULT 0,
             payment_amount decimal(12,2) DEFAULT 0,
             assigned_to int(11) DEFAULT NULL,
+            representative_note text,
             overall_status varchar(20) DEFAULT 'pending',
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -382,7 +433,7 @@ class WorkflowSystem {
         // Mevcut rolleri kontrol et ve gerekirse güncelle
         $role = get_role('wfs_superadmin');
         if (!$role) {
-            add_role('wfs_superadmin', __('İş Akışı Süperadmin', WFS_TEXT_DOMAIN), array(
+            add_role('wfs_superadmin', __('Eu WorkFlow Süperadmin', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -396,7 +447,7 @@ class WorkflowSystem {
         
         $role = get_role('wfs_representative');
         if (!$role) {
-            add_role('wfs_representative', __('İş Akışı Temsilci', WFS_TEXT_DOMAIN), array(
+            add_role('wfs_representative', __('Eu WorkFlow Temsilcisi', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -411,7 +462,7 @@ class WorkflowSystem {
 
         $role = get_role('wfs_consultant');
         if (!$role) {
-            add_role('wfs_consultant', __('İş Akışı Danışan', WFS_TEXT_DOMAIN), array(
+            add_role('wfs_consultant', __('Eu WorkFlow Danışanı', WFS_TEXT_DOMAIN), array(
                 'read' => true,
                 'edit_posts' => false,
                 'delete_posts' => false,
@@ -423,8 +474,8 @@ class WorkflowSystem {
     
     public function admin_menu() {
         add_menu_page(
-            __('İş Akışı Sistemi', WFS_TEXT_DOMAIN),
-            __('İş Akışı', WFS_TEXT_DOMAIN),
+            __('Eu WorkFlow Sistemi', WFS_TEXT_DOMAIN),
+            __('Eu WorkFlow', WFS_TEXT_DOMAIN),
             'read', // Temel okuma yetkisi
             WFS_MENU_SLUG,
             array($this, 'admin_page'),
@@ -556,7 +607,9 @@ class WorkflowSystem {
                 'payment_saved' => __('Ödeme bilgisi kaydedildi', WFS_TEXT_DOMAIN),
                 'pending' => __('Beklemede', WFS_TEXT_DOMAIN),
                 'approved' => __('Onaylı', WFS_TEXT_DOMAIN),
-                'rejected' => __('Reddedildi', WFS_TEXT_DOMAIN)
+                'rejected' => __('Reddedildi', WFS_TEXT_DOMAIN),
+                'note_saved' => __('Not kaydedildi', WFS_TEXT_DOMAIN),
+                'note_error' => __('Not kaydedilemedi', WFS_TEXT_DOMAIN)
             )
         ));
     }
@@ -727,6 +780,7 @@ class WorkflowSystem {
             $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
             $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
             $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
+            $record->representative_note = (string) ($record->representative_note ?? '');
 
             $records_response[] = array(
                 'record' => $record,
@@ -952,6 +1006,7 @@ class WorkflowSystem {
             'interview_at' => $interview_at,
             'interview_completed' => $interview_completed,
             'payment_amount' => $payment_amount,
+            'representative_note' => '',
         );
 
         $inserted = $wpdb->insert($wpdb->prefix . 'wfs_records', $record_data);
@@ -1231,6 +1286,56 @@ class WorkflowSystem {
             wp_send_json_error('Atama hatası: ' . $wpdb->last_error);
         }
     }
+
+    public function ajax_update_rep_note() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'wfs_nonce')) {
+            wp_send_json_error('Güvenlik hatası');
+            return;
+        }
+
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        global $wpdb;
+
+        $record_id = intval($_POST['record_id'] ?? 0);
+        $note_raw  = wp_unslash($_POST['note'] ?? '');
+        $note      = sanitize_textarea_field($note_raw);
+
+        if (!$record_id) {
+            wp_send_json_error('Kayıt bulunamadı');
+            return;
+        }
+
+        $updated = $wpdb->update(
+            $wpdb->prefix . 'wfs_records',
+            array(
+                'representative_note' => $note,
+                'updated_at'          => current_time('mysql'),
+            ),
+            array('id' => $record_id),
+            array('%s', '%s'),
+            array('%d')
+        );
+
+        if ($updated === false) {
+            wp_send_json_error('Not kaydedilemedi: ' . $wpdb->last_error);
+            return;
+        }
+
+        $this->log_activity(
+            $record_id,
+            get_current_user_id(),
+            'representative_note_updated',
+            'Temsilci notu güncellendi'
+        );
+
+        wp_send_json_success(array(
+            'note' => $note,
+        ));
+    }
     
     private function send_assignment_email($record_id, $assigned_to) {
         global $wpdb;
@@ -1391,7 +1496,7 @@ class WorkflowSystem {
             $hide_wp_menus = get_option('wfs_hide_wp_menus', false);
             ?>
             <div class="wrap">
-                <h1><?php echo esc_html(__('İş Akışı Ayarları', WFS_TEXT_DOMAIN)); ?></h1>
+                <h1><?php echo esc_html(__('Eu WorkFlow Ayarları', WFS_TEXT_DOMAIN)); ?></h1>
                 <form method="post" action="">
                     <?php wp_nonce_field('wfs_settings_nonce'); ?>
                     <table class="form-table">

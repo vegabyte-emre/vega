@@ -43,6 +43,23 @@ $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ','
         </section>
 
         <section class="wfs-info-section">
+            <h4>📝 <?php esc_html_e('Temsilci Notu', WFS_TEXT_DOMAIN); ?></h4>
+            <?php if ($can_assign): ?>
+                <textarea class="wfs-rep-note" data-record-id="<?php echo $record_id; ?>" rows="4" placeholder="<?php echo esc_attr__('Notunuzu buraya yazın...', WFS_TEXT_DOMAIN); ?>"><?php echo esc_textarea($record->representative_note); ?></textarea>
+                <div class="wfs-rep-note-actions">
+                    <button class="wfs-btn wfs-btn-secondary wfs-save-rep-note" data-record-id="<?php echo $record_id; ?>"><?php esc_html_e('Notu Kaydet', WFS_TEXT_DOMAIN); ?></button>
+                    <span class="wfs-rep-note-status" data-record-id="<?php echo $record_id; ?>" aria-live="polite"></span>
+                </div>
+            <?php else: ?>
+                <?php if (!empty($record->representative_note)): ?>
+                    <div class="wfs-rep-note-view"><?php echo nl2br(esc_html($record->representative_note)); ?></div>
+                <?php else: ?>
+                    <p class="wfs-rep-note-empty"><?php esc_html_e('Henüz temsilci notu eklenmemiş.', WFS_TEXT_DOMAIN); ?></p>
+                <?php endif; ?>
+            <?php endif; ?>
+        </section>
+
+        <section class="wfs-info-section">
             <h4>📂 <?php esc_html_e('Dosya Kategorileri', WFS_TEXT_DOMAIN); ?></h4>
             <div class="wfs-documents-grid">
                 <?php foreach ($files_by_category as $category_slug => $category_data):

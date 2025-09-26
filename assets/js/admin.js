@@ -193,6 +193,8 @@ jQuery(document).ready(function($) {
         const interviewDateText = interviewDate ? interviewDate.toLocaleString() : __('Belirtilmemiş', 'Belirtilmemiş');
         const interviewCompleted = parseInt(record.interview_completed, 10) === 1;
         const paymentHtml = renderPaymentSection(record, canAssign);
+        const representativeNote = record.representative_note || '';
+        const representativeNoteDisplay = representativeNote ? escapeHtml(representativeNote).replace(/\n/g, '<br>') : '';
 
         return `
             <div class="wfs-details-grid">
@@ -207,6 +209,16 @@ jQuery(document).ready(function($) {
                         ${record.department ? `<li><strong>${escapeHtml(__('Bölüm', 'Bölüm'))}:</strong> ${escapeHtml(record.department)}</li>` : ''}
                         ${record.job_title ? `<li><strong>${escapeHtml(__('Mesleği', 'Mesleği'))}:</strong> ${escapeHtml(record.job_title)}</li>` : ''}
                     </ul>
+                </section>
+                <section class="wfs-info-section">
+                    <h4>📝 ${escapeHtml(__('Temsilci Notu', 'Temsilci Notu'))}</h4>
+                    ${canAssign ? `
+                        <textarea class="wfs-rep-note" data-record-id="${record.id}" rows="4" placeholder="${escapeHtml(__('Notunuzu buraya yazın...', 'Notunuzu buraya yazın...'))}">${escapeHtml(representativeNote)}</textarea>
+                        <div class="wfs-rep-note-actions">
+                            <button class="wfs-btn wfs-btn-secondary wfs-save-rep-note" data-record-id="${record.id}">${escapeHtml(__('Notu Kaydet', 'Notu Kaydet'))}</button>
+                            <span class="wfs-rep-note-status" data-record-id="${record.id}" aria-live="polite"></span>
+                        </div>
+                    ` : representativeNote ? `<div class="wfs-rep-note-view">${representativeNoteDisplay}</div>` : `<p class="wfs-rep-note-empty">${escapeHtml(__('Henüz temsilci notu eklenmemiş.', 'Henüz temsilci notu eklenmemiş.'))}</p>`}
                 </section>
                 <section class="wfs-info-section">
                     <h4>📂 ${escapeHtml(__('Dosya Kategorileri', 'Dosya Kategorileri'))}</h4>
@@ -672,6 +684,44 @@ jQuery(document).ready(function($) {
             showToast('Bağlantı hatası', 'error');
         }).always(function() {
             $btn.prop('disabled', false).text(__('Kaydet', 'Kaydet'));
+        });
+    });
+
+    $(document).on('click', '.wfs-save-rep-note', function(e) {
+        e.preventDefault();
+        const recordId = $(this).data('record-id');
+        const $textarea = $(`.wfs-rep-note[data-record-id="${recordId}"]`);
+        const note = $textarea.val();
+        const $btn = $(this);
+        const originalText = $btn.text();
+        const $status = $(`.wfs-rep-note-status[data-record-id="${recordId}"]`);
+
+        $btn.prop('disabled', true).text(__('Kaydediliyor...', 'Kaydediliyor...'));
+        $status.text('').removeClass('is-success is-error');
+
+        $.post(wfs_ajax.ajax_url, {
+            action: 'wfs_update_rep_note',
+            nonce: wfs_ajax.nonce,
+            record_id: recordId,
+            note: note
+        }).done(function(response) {
+            if (response.success) {
+                showToast(wfs_ajax.strings.note_saved || 'Not kaydedildi');
+                $status.text(__('Kaydedildi', 'Kaydedildi')).addClass('is-success');
+            } else {
+                showToast(response.data || (wfs_ajax.strings.note_error || 'Not kaydedilemedi'), 'error');
+                $status.text(__('Hata oluştu', 'Hata oluştu')).addClass('is-error');
+            }
+        }).fail(function() {
+            showToast('Bağlantı hatası', 'error');
+            $status.text(__('Bağlantı hatası', 'Bağlantı hatası')).addClass('is-error');
+        }).always(function() {
+            $btn.prop('disabled', false).text(originalText);
+            setTimeout(function() {
+                $status.fadeOut(200, function() {
+                    $(this).text('').removeClass('is-success is-error').show();
+                });
+            }, 2000);
         });
     });
 });
