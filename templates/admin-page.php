@@ -311,7 +311,7 @@ function wfs_format_phone_for_actions($phone)
                         <div class="wfs-card-body">
                             <div class="wfs-user-info">
                                 <div class="wfs-avatar" aria-hidden="true"><?php echo esc_html($initials ?: '👤'); ?></div>
-                                <div>
+                                <div class="wfs-user-details">
                                     <h3 class="wfs-user-name"><?php echo esc_html($full_name); ?></h3>
                                     <div class="wfs-user-meta">
                                         <?php if (!empty($record->job_title)): ?>
@@ -321,35 +321,35 @@ function wfs_format_phone_for_actions($phone)
                                             <span>🏢 <?php echo esc_html($record->department); ?></span>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="wfs-contact-actions">
-                                        <?php if ($phone_actions['tel']): ?>
-                                            <a href="<?php echo esc_url($phone_actions['tel']); ?>" class="wfs-contact-btn">Ara</a>
-                                        <?php endif; ?>
-                                        <?php if ($phone_actions['whatsapp']): ?>
-                                            <a href="<?php echo esc_url($phone_actions['whatsapp']); ?>" class="wfs-contact-btn" target="_blank" rel="noopener">WhatsApp</a>
-                                        <?php endif; ?>
-                                        <?php if (!empty($record->email)): ?>
-                                            <a href="mailto:<?php echo esc_attr($record->email); ?>" class="wfs-contact-btn">Mail</a>
-                                        <?php endif; ?>
-                                    </div>
                                     <div class="wfs-contact-text">
                                         <?php if (!empty($record->phone)): ?><span>📞 <?php echo esc_html($record->phone); ?></span><?php endif; ?>
                                         <?php if (!empty($record->email)): ?><span>📧 <?php echo esc_html($record->email); ?></span><?php endif; ?>
                                     </div>
+                                    <div class="wfs-doc-summary">
+                                        <?php foreach ($categories_display as $category_slug => $category_data):
+                                            $has_file = !empty($category_data['files']);
+                                            ?>
+                                            <span class="wfs-doc-chip <?php echo $has_file ? 'is-ready' : 'is-missing'; ?>" data-category="<?php echo esc_attr($category_slug); ?>">
+                                                <span class="wfs-doc-icon" aria-hidden="true"><?php echo esc_html($category_data['meta']['icon']); ?></span>
+                                                <span class="wfs-doc-label"><?php echo esc_html($category_data['meta']['label']); ?></span>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             </div>
                             <div class="wfs-card-actions">
-                                <div class="wfs-doc-summary">
-                                    <?php foreach ($categories_display as $category_slug => $category_data):
-                                        $has_file = !empty($category_data['files']);
-                                        ?>
-                                        <span class="wfs-doc-chip <?php echo $has_file ? 'is-ready' : 'is-missing'; ?>" data-category="<?php echo esc_attr($category_slug); ?>">
-                                            <span class="wfs-doc-icon" aria-hidden="true"><?php echo esc_html($category_data['meta']['icon']); ?></span>
-                                            <span class="wfs-doc-label"><?php echo esc_html($category_data['meta']['label']); ?></span>
-                                        </span>
-                                    <?php endforeach; ?>
-                                </div>
                                 <button class="wfs-btn-link wfs-toggle-details" data-record-id="<?php echo intval($record->id); ?>">Detaylar</button>
+                                <div class="wfs-contact-actions">
+                                    <?php if ($phone_actions['tel']): ?>
+                                        <a href="<?php echo esc_url($phone_actions['tel']); ?>" class="wfs-contact-btn">Ara</a>
+                                    <?php endif; ?>
+                                    <?php if ($phone_actions['whatsapp']): ?>
+                                        <a href="<?php echo esc_url($phone_actions['whatsapp']); ?>" class="wfs-contact-btn" target="_blank" rel="noopener">WhatsApp</a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($record->email)): ?>
+                                        <a href="mailto:<?php echo esc_attr($record->email); ?>" class="wfs-contact-btn">Mail</a>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     </div>

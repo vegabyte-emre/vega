@@ -639,22 +639,22 @@ jQuery(document).ready(function($) {
                     <div class="wfs-card-body">
                         <div class="wfs-user-info">
                             <div class="wfs-avatar" aria-hidden="true">${escapeHtml(initials || '👤')}</div>
-                            <div>
+                            <div class="wfs-user-details">
                                 <h3 class="wfs-user-name">${escapeHtml(name)}</h3>
                                 <div class="wfs-user-meta">
                                     ${record.job_title ? `<span>💼 ${escapeHtml(record.job_title)}</span>` : ''}
                                     ${record.department ? `<span>🏢 ${escapeHtml(record.department)}</span>` : ''}
                                 </div>
-                                <div class="wfs-contact-actions">${contactButtons.join('')}</div>
                                 <div class="wfs-contact-text">
                                     ${record.phone ? `<span>📞 ${escapeHtml(record.phone)}</span>` : ''}
                                     ${record.email ? `<span>📧 ${escapeHtml(record.email)}</span>` : ''}
                                 </div>
+                                <div class="wfs-doc-summary">${renderDocChips(filesByCategory)}</div>
                             </div>
                         </div>
                         <div class="wfs-card-actions">
-                            <div class="wfs-doc-summary">${renderDocChips(filesByCategory)}</div>
                             <button class="wfs-btn-link wfs-toggle-details" data-record-id="${record.id}">${escapeHtml(__('Detaylar', 'Detaylar'))}</button>
+                            <div class="wfs-contact-actions">${contactButtons.join('')}</div>
                         </div>
                     </div>
                 </div>
