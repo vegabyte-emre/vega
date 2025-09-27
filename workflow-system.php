@@ -84,6 +84,7 @@ class WorkflowSystem {
         $record->can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
         $record->can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
         $record->can_manage = $this->user_can_manage_record($record);
+        $record->can_upload = $record->can_manage || $record->can_review;
         $record->created_at = date_i18n('d.m.Y H:i', strtotime($record->created_at));
         $record->updated_at = date_i18n('d.m.Y H:i', strtotime($record->updated_at));
         $record->representative_note = (string) ($record->representative_note ?? '');
@@ -436,7 +437,7 @@ class WorkflowSystem {
             id mediumint(9) NOT NULL AUTO_INCREMENT,
             first_name varchar(100) NOT NULL,
             last_name varchar(100) NOT NULL,
-            email varchar(100) NOT NULL,
+            email varchar(100) NOT NULL DEFAULT '',
             phone varchar(20) NOT NULL,
             education_level varchar(50),
             department varchar(100),
@@ -1092,8 +1093,13 @@ class WorkflowSystem {
             }
         }
 
-        if ($first_name === '' || $last_name === '' || $email === '') {
-            wp_send_json_error(__('Lütfen zorunlu alanları doldurun.', WFS_TEXT_DOMAIN));
+        if ($first_name === '' || $last_name === '') {
+            wp_send_json_error(__('Lütfen ad ve soyad alanlarını doldurun.', WFS_TEXT_DOMAIN));
+            return;
+        }
+
+        if ($email && !is_email($email)) {
+            wp_send_json_error(__('Geçerli bir e-posta adresi girin.', WFS_TEXT_DOMAIN));
             return;
         }
 
@@ -1371,7 +1377,7 @@ class WorkflowSystem {
             return;
         }
 
-        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records')) {
+        if (!current_user_can('manage_options') && !current_user_can('wfs_assign_records') && !current_user_can('wfs_review_files')) {
             wp_send_json_error('Yetkiniz yok');
             return;
         }
@@ -1386,7 +1392,16 @@ class WorkflowSystem {
 
         $record = $this->get_record_row($record_id);
 
-        if (!$record || !$this->user_can_manage_record($record)) {
+        if (!$record) {
+            wp_send_json_error('Yetkiniz yok');
+            return;
+        }
+
+        $can_manage = $this->user_can_manage_record($record);
+        $can_review = current_user_can('wfs_review_files') && $this->user_can_view_record($record);
+        $has_full_access = $this->user_has_full_access();
+
+        if (!$can_manage && !$can_review && !$has_full_access) {
             wp_send_json_error('Yetkiniz yok');
             return;
         }

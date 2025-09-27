@@ -10,7 +10,10 @@ jQuery(document).ready(function($) {
     const $bulkStatusSelect = $('#wfs-bulk-status');
     const $bulkAssignSelect = $('#wfs-bulk-assign');
     const $createSection = $('.wfs-add-record-section');
-    const $toggleCreate = $('.wfs-toggle-create');
+    const $createCollapseButton = $('.wfs-toggle-create[data-action="collapse"]');
+    const $createExpandButton = $('.wfs-toggle-create[data-action="expand"]');
+    const $createHeading = $('#wfs-create-record-heading');
+    const $confirmModal = $('#wfs-confirm-modal');
     const statusMap = wfs_ajax.statuses || {};
     const fileCategories = wfs_ajax.file_categories || {};
     const hasI18n = typeof window !== 'undefined' && window.wp && wp.i18n && typeof wp.i18n.__ === 'function';
@@ -19,6 +22,8 @@ jQuery(document).ready(function($) {
 
     let suggestionRequest = null;
     const selectedRecords = new Set();
+    let confirmResolve = null;
+    let previousFocusedElement = null;
 
     function recordIdKey(id) {
         return String(id);
@@ -26,6 +31,34 @@ jQuery(document).ready(function($) {
 
     function hideSuggestions() {
         $searchSuggestions.removeClass('is-visible').attr('aria-hidden', 'true').empty();
+    }
+
+    function setCreateSectionState(collapsed, options = {}) {
+        if (!$createSection.length) {
+            return;
+        }
+
+        const focusOnOpen = options.focus === true;
+        $createSection.toggleClass('is-collapsed', collapsed).attr('data-collapsed', collapsed ? 'true' : 'false');
+
+        if ($createCollapseButton.length) {
+            $createCollapseButton.toggleClass('is-hidden', collapsed).attr('aria-expanded', collapsed ? 'false' : 'true');
+        }
+
+        if ($createExpandButton.length) {
+            $createExpandButton.toggleClass('is-hidden', !collapsed).attr('aria-expanded', collapsed ? 'true' : 'false');
+        }
+
+        if ($createHeading.length) {
+            $createHeading.attr('aria-expanded', collapsed ? 'false' : 'true');
+        }
+
+        if (!collapsed && focusOnOpen) {
+            const $firstField = $createSection.find('input, select, textarea').filter(':visible').first();
+            if ($firstField.length) {
+                $firstField.trigger('focus');
+            }
+        }
     }
 
     function updateBulkToolbar() {
@@ -47,6 +80,7 @@ jQuery(document).ready(function($) {
         }
 
         syncSelectAllState();
+        refreshSelectionStyles();
     }
 
     function syncSelectAllState() {
@@ -71,7 +105,70 @@ jQuery(document).ready(function($) {
     function clearBulkSelection() {
         selectedRecords.clear();
         $('.wfs-bulk-checkbox').prop('checked', false);
+        $('.wfs-record-card').removeClass('is-selected');
         updateBulkToolbar();
+    }
+
+    function updateCardSelectionState(recordId) {
+        const key = recordIdKey(recordId);
+        const $card = $(`.wfs-record-card[data-record-id="${recordId}"]`);
+        if (!$card.length) {
+            return;
+        }
+        if (selectedRecords.has(key)) {
+            $card.addClass('is-selected');
+            $card.find('.wfs-bulk-checkbox').prop('checked', true);
+        } else {
+            $card.removeClass('is-selected');
+            $card.find('.wfs-bulk-checkbox').prop('checked', false);
+        }
+    }
+
+    function refreshSelectionStyles() {
+        $('.wfs-record-card').each(function() {
+            updateCardSelectionState($(this).data('record-id'));
+        });
+    }
+
+    function closeConfirmModal(result) {
+        if (!$confirmModal.length) {
+            if (confirmResolve) {
+                confirmResolve(result);
+                confirmResolve = null;
+            }
+            return;
+        }
+
+        $confirmModal.removeClass('is-visible').attr('aria-hidden', 'true');
+        $confirmModal.find('.wfs-modal-message').text('');
+
+        if (confirmResolve) {
+            confirmResolve(result);
+            confirmResolve = null;
+        }
+
+        if (previousFocusedElement && typeof previousFocusedElement.focus === 'function') {
+            previousFocusedElement.focus();
+        }
+        previousFocusedElement = null;
+    }
+
+    function openConfirmModal(message) {
+        if (!$confirmModal.length) {
+            return Promise.resolve(window.confirm(message));
+        }
+
+        previousFocusedElement = document.activeElement;
+        $confirmModal.find('.wfs-modal-message').text(message || '');
+        $confirmModal.addClass('is-visible').attr('aria-hidden', 'false');
+
+        setTimeout(() => {
+            $confirmModal.find('.wfs-modal-confirm').trigger('focus');
+        }, 50);
+
+        return new Promise((resolve) => {
+            confirmResolve = resolve;
+        });
     }
 
     function applyRecordPayload(payload) {
@@ -91,7 +188,7 @@ jQuery(document).ready(function($) {
             syncAssignableOptions();
             if (wasSelected) {
                 selectedRecords.add(key);
-                $(`.wfs-record-card[data-record-id="${recordId}"] .wfs-bulk-checkbox`).prop('checked', true);
+                updateCardSelectionState(recordId);
             }
             if (wasExpanded) {
                 const $details = $(`.wfs-record-card[data-record-id="${recordId}"] .wfs-record-details`);
@@ -238,7 +335,7 @@ jQuery(document).ready(function($) {
         return chips.join('');
     }
 
-    function renderDocumentsDetails(record, filesByCategory, canReview) {
+    function renderDocumentsDetails(record, filesByCategory, canReview, canUpload) {
         const cards = [];
         const canManage = record && (record.can_manage === true || record.can_manage === '1');
         const recordId = record ? record.id : '';
@@ -278,9 +375,9 @@ jQuery(document).ready(function($) {
                     </div>
                     ${fileList}
                     <div class="wfs-documents-upload">
-                        <label class="wfs-upload-label">
+                        <label class="wfs-upload-label ${canUpload ? '' : 'is-disabled'}">
                             <span>${escapeHtml(__('Dosya Yükle', 'Dosya Yükle'))}</span>
-                            <input type="file" class="wfs-documents-upload-input" data-record-id="${escapeHtml(recordId)}" data-category="${escapeHtml(slug)}" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" ${canManage ? '' : 'disabled'}>
+                            <input type="file" class="wfs-documents-upload-input" data-record-id="${escapeHtml(recordId)}" data-category="${escapeHtml(slug)}" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" ${canUpload ? '' : 'disabled'}>
                         </label>
                     </div>
                 </div>
@@ -309,6 +406,7 @@ jQuery(document).ready(function($) {
         const canAssign = record.can_assign !== undefined ? (record.can_assign === true || record.can_assign === '1') : !!wfs_ajax.can_assign;
         const canReview = record.can_review !== undefined ? (record.can_review === true || record.can_review === '1') : !!wfs_ajax.can_review;
         const canManage = record.can_manage !== undefined ? (record.can_manage === true || record.can_manage === '1') : canAssign;
+        const canUpload = record.can_upload !== undefined ? (record.can_upload === true || record.can_upload === '1') : (canManage || canReview);
         const status = statusMap[record.overall_status] || { label: record.overall_status, color: '#2563eb', bg: '#dbeafe' };
         const interviewRequired = parseInt(record.interview_required, 10) === 1;
         const interviewLabel = interviewRequired ? __('Evet', 'Evet') : __('Hayır', 'Hayır');
@@ -395,7 +493,7 @@ jQuery(document).ready(function($) {
                 </section>
                 <section class="wfs-info-section">
                     <h4>📂 ${escapeHtml(__('Dosya Kategorileri', 'Dosya Kategorileri'))}</h4>
-                    <div class="wfs-documents-grid">${renderDocumentsDetails(record, filesByCategory, canReview)}</div>
+                    <div class="wfs-documents-grid">${renderDocumentsDetails(record, filesByCategory, canReview, canUpload)}</div>
                 </section>
                 <section class="wfs-info-section">
                     <h4>🎯 ${escapeHtml(__('Atama', 'Atama'))}</h4>
@@ -476,6 +574,8 @@ jQuery(document).ready(function($) {
         }
 
         const canManage = record.can_manage !== undefined ? (record.can_manage === true || record.can_manage === '1') : !!wfs_ajax.can_assign;
+        const canReview = record.can_review !== undefined ? (record.can_review === true || record.can_review === '1') : !!wfs_ajax.can_review;
+        const canUpload = record.can_upload !== undefined ? (record.can_upload === true || record.can_upload === '1') : (canManage || canReview);
 
         return `
             <div class="wfs-record-card"
@@ -490,7 +590,9 @@ jQuery(document).ready(function($) {
                 data-job-title="${escapeHtml(record.job_title || '')}"
                 data-age="${escapeHtml(record.age || '')}"
                 data-status="${escapeHtml(record.overall_status || '')}"
-                data-can-manage="${canManage ? '1' : '0'}">
+                data-can-manage="${canManage ? '1' : '0'}"
+                data-can-review="${canReview ? '1' : '0'}"
+                data-can-upload="${canUpload ? '1' : '0'}">
                 <div class="wfs-card-header">
                     <div class="wfs-card-select">
                         <input type="checkbox" class="wfs-bulk-checkbox" value="${record.id}" aria-label="${escapeHtml(`${__('Kaydı seç', 'Kaydı seç')}: ${name}`)}">
@@ -523,7 +625,7 @@ jQuery(document).ready(function($) {
                         <button class="wfs-btn-link wfs-toggle-details" data-record-id="${record.id}">${escapeHtml(__('Detaylar', 'Detaylar'))}</button>
                     </div>
                 </div>
-                <div class="wfs-record-details" data-record-id="${record.id}" data-status="${escapeHtml(record.overall_status)}" data-first-name="${escapeHtml(record.first_name || '')}" data-last-name="${escapeHtml(record.last_name || '')}" data-email="${escapeHtml(record.email || '')}" data-phone="${escapeHtml(record.phone || '')}" data-education="${escapeHtml(record.education_level || '')}" data-department="${escapeHtml(record.department || '')}" data-job-title="${escapeHtml(record.job_title || '')}" data-age="${escapeHtml(record.age || '')}" data-can-manage="${canManage ? '1' : '0'}" style="display: none;">
+                <div class="wfs-record-details" data-record-id="${record.id}" data-status="${escapeHtml(record.overall_status)}" data-first-name="${escapeHtml(record.first_name || '')}" data-last-name="${escapeHtml(record.last_name || '')}" data-email="${escapeHtml(record.email || '')}" data-phone="${escapeHtml(record.phone || '')}" data-education="${escapeHtml(record.education_level || '')}" data-department="${escapeHtml(record.department || '')}" data-job-title="${escapeHtml(record.job_title || '')}" data-age="${escapeHtml(record.age || '')}" data-can-manage="${canManage ? '1' : '0'}" data-can-review="${canReview ? '1' : '0'}" data-can-upload="${canUpload ? '1' : '0'}" style="display: none;">
                     ${renderRecordDetails(record, filesByCategory)}
                 </div>
             </div>
@@ -570,6 +672,7 @@ jQuery(document).ready(function($) {
         $recordsContainer.html(cards);
         syncAssignableOptions();
         updateBulkToolbar();
+        refreshSelectionStyles();
     }
 
     function fetchRecords() {
@@ -609,6 +712,36 @@ jQuery(document).ready(function($) {
         };
     })();
 
+    if ($createSection.length) {
+        const initialState = $createSection.attr('data-collapsed');
+        const startCollapsed = initialState === 'true' || initialState === true || $createSection.hasClass('is-collapsed');
+        setCreateSectionState(startCollapsed, { focus: false });
+    }
+
+    $createCollapseButton.on('click', function(event) {
+        event.preventDefault();
+        setCreateSectionState(true);
+    });
+
+    $createExpandButton.on('click', function(event) {
+        event.preventDefault();
+        setCreateSectionState(false, { focus: true });
+    });
+
+    if ($createHeading.length) {
+        $createHeading.on('click', function() {
+            if ($createSection.hasClass('is-collapsed')) {
+                setCreateSectionState(false, { focus: true });
+            }
+        });
+        $createHeading.on('keydown', function(event) {
+            if ($createSection.hasClass('is-collapsed') && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                setCreateSectionState(false, { focus: true });
+            }
+        });
+    }
+
     $searchInput.on('input', function() {
         const query = ($searchInput.val() || '').trim();
         if (query.length >= 2) {
@@ -633,11 +766,6 @@ jQuery(document).ready(function($) {
     $searchButton.on('click', function(event) {
         event.preventDefault();
         fetchRecords();
-    });
-
-    $toggleCreate.on('click', function(event) {
-        event.preventDefault();
-        toggleCreateSection();
     });
 
     $(document).on('mousedown', '.wfs-search-suggestion', function(event) {
@@ -711,7 +839,19 @@ jQuery(document).ready(function($) {
         } else {
             selectedRecords.delete(key);
         }
+        updateCardSelectionState(recordId);
         updateBulkToolbar();
+    });
+
+    $(document).on('click', '.wfs-card-select', function(event) {
+        if ($(event.target).is('input')) {
+            return;
+        }
+        event.preventDefault();
+        const $checkbox = $(this).find('.wfs-bulk-checkbox');
+        if ($checkbox.length) {
+            $checkbox.prop('checked', !$checkbox.is(':checked')).trigger('change');
+        }
     });
 
     $bulkSelectAll.on('change', function() {
@@ -725,6 +865,7 @@ jQuery(document).ready(function($) {
             } else {
                 selectedRecords.delete(key);
             }
+            updateCardSelectionState(recordId);
         });
         updateBulkToolbar();
     });
@@ -749,12 +890,13 @@ jQuery(document).ready(function($) {
         $.post(wfs_ajax.ajax_url, {
             action: 'wfs_bulk_update_status',
             nonce: wfs_ajax.nonce,
-            record_ids: ids,
+            record_ids: JSON.stringify(ids),
             status: status
         }).done(function(response) {
             if (response.success && response.data && response.data.payloads) {
                 response.data.payloads.forEach(applyRecordPayload);
                 showToast(wfs_ajax.strings.bulk_status_success || __('Statü güncellendi', 'Statü güncellendi'));
+                clearBulkSelection();
             } else {
                 showToast((response && response.data) || wfs_ajax.strings.error || __('Bir hata oluştu', 'Bir hata oluştu'), 'error');
             }
@@ -787,12 +929,13 @@ jQuery(document).ready(function($) {
         $.post(wfs_ajax.ajax_url, {
             action: 'wfs_bulk_assign_records',
             nonce: wfs_ajax.nonce,
-            record_ids: ids,
+            record_ids: JSON.stringify(ids),
             assigned_to: assignedTo
         }).done(function(response) {
             if (response.success && response.data && response.data.payloads) {
                 response.data.payloads.forEach(applyRecordPayload);
                 showToast(wfs_ajax.strings.bulk_assign_success || __('Atama işlemi tamamlandı', 'Atama işlemi tamamlandı'));
+                clearBulkSelection();
             } else {
                 showToast((response && response.data) || wfs_ajax.strings.error || __('Bir hata oluştu', 'Bir hata oluştu'), 'error');
             }
@@ -818,7 +961,7 @@ jQuery(document).ready(function($) {
             return;
         }
 
-        $btn.prop('disabled', true).text('Atanıyor...');
+        $btn.prop('disabled', true).text(__('Atanıyor...', 'Atanıyor...'));
 
         $.post(wfs_ajax.ajax_url, {
             action: 'wfs_assign_record',
@@ -1143,30 +1286,66 @@ jQuery(document).ready(function($) {
     $(document).on('click', '.wfs-delete-record', function(e) {
         e.preventDefault();
         const recordId = $(this).data('record-id');
-
-        if (!confirm(wfs_ajax.strings.delete_confirm || __('Bu kaydı silmek istediğinize emin misiniz?', 'Bu kaydı silmek istediğinize emin misiniz?'))) {
-            return;
-        }
-
         const $btn = $(this);
         const originalText = $btn.text();
-        $btn.prop('disabled', true).text(__('Siliniyor...', 'Siliniyor...'));
+        const message = wfs_ajax.strings.delete_confirm || __('Bu kaydı silmek istediğinize emin misiniz?', 'Bu kaydı silmek istediğinize emin misiniz?');
 
-        $.post(wfs_ajax.ajax_url, {
-            action: 'wfs_delete_record',
-            nonce: wfs_ajax.nonce,
-            record_id: recordId
-        }).done(function(response) {
-            if (response.success) {
-                removeRecordCard(recordId);
-                showToast(wfs_ajax.strings.delete_success || __('Kayıt silindi', 'Kayıt silindi'));
-            } else {
-                showToast(response.data || __('Kayıt silinemedi', 'Kayıt silinemedi'), 'error');
-                $btn.prop('disabled', false).text(originalText);
+        openConfirmModal(message).then((confirmed) => {
+            if (!confirmed) {
+                return;
             }
-        }).fail(function() {
-            showToast('Bağlantı hatası', 'error');
-            $btn.prop('disabled', false).text(originalText);
+
+            $btn.prop('disabled', true).text(__('Siliniyor...', 'Siliniyor...'));
+
+            $.post(wfs_ajax.ajax_url, {
+                action: 'wfs_delete_record',
+                nonce: wfs_ajax.nonce,
+                record_id: recordId
+            }).done(function(response) {
+                if (response.success) {
+                    removeRecordCard(recordId);
+                    showToast(wfs_ajax.strings.delete_success || __('Kayıt silindi', 'Kayıt silindi'));
+                } else {
+                    showToast(response.data || __('Kayıt silinemedi', 'Kayıt silinemedi'), 'error');
+                    $btn.prop('disabled', false).text(originalText);
+                }
+            }).fail(function() {
+                showToast('Bağlantı hatası', 'error');
+                $btn.prop('disabled', false).text(originalText);
+            });
         });
+    });
+
+    $(document).on('click', '.wfs-modal-cancel', function(event) {
+        event.preventDefault();
+        closeConfirmModal(false);
+    });
+
+    $(document).on('click', '.wfs-modal-confirm', function(event) {
+        event.preventDefault();
+        closeConfirmModal(true);
+    });
+
+    $(document).on('click', '#wfs-confirm-modal [data-modal-dismiss]', function(event) {
+        event.preventDefault();
+        closeConfirmModal(false);
+    });
+
+    if ($confirmModal.length) {
+        $confirmModal.on('click', function(event) {
+            if ($(event.target).is('#wfs-confirm-modal')) {
+                closeConfirmModal(false);
+            }
+        });
+        $confirmModal.find('.wfs-modal__dialog').on('click', function(event) {
+            event.stopPropagation();
+        });
+    }
+
+    $(document).on('keydown', function(event) {
+        if (event.key === 'Escape' && $confirmModal.length && $confirmModal.hasClass('is-visible')) {
+            event.preventDefault();
+            closeConfirmModal(false);
+        }
     });
 });

@@ -9,6 +9,7 @@ $status_config = wfs_get_status_config($record->overall_status, $status_settings
 $can_assign = current_user_can('manage_options') || current_user_can('wfs_assign_records');
 $can_review = current_user_can('manage_options') || current_user_can('wfs_review_files');
 $can_manage = !empty($record->can_manage);
+$can_upload = $can_manage || $can_review;
 $interview_required = intval($record->interview_required) === 1;
 $interview_completed = intval($record->interview_completed) === 1;
 $interview_label = $interview_required ? __('Evet', WFS_TEXT_DOMAIN) : __('Hayır', WFS_TEXT_DOMAIN);
@@ -28,6 +29,8 @@ $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ','
     data-job-title="<?php echo esc_attr($record->job_title); ?>"
     data-age="<?php echo esc_attr($record->age); ?>"
     data-can-manage="<?php echo $can_manage ? '1' : '0'; ?>"
+    data-can-review="<?php echo $can_review ? '1' : '0'; ?>"
+    data-can-upload="<?php echo $can_upload ? '1' : '0'; ?>"
     style="display: none;">
     <?php if ($can_manage): ?>
         <div class="wfs-details-toolbar">
@@ -153,7 +156,7 @@ $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ','
                         <div class="wfs-documents-upload">
                             <label class="wfs-upload-label">
                                 <span><?php esc_html_e('Dosya Yükle', WFS_TEXT_DOMAIN); ?></span>
-                                <input type="file" class="wfs-documents-upload-input" data-record-id="<?php echo $record_id; ?>" data-category="<?php echo esc_attr($category_slug); ?>" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" <?php echo $can_manage ? '' : 'disabled'; ?>>
+                                <input type="file" class="wfs-documents-upload-input" data-record-id="<?php echo $record_id; ?>" data-category="<?php echo esc_attr($category_slug); ?>" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" <?php echo $can_upload ? '' : 'disabled'; ?>>
                             </label>
                         </div>
                     </div>

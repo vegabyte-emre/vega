@@ -1085,3 +1085,78 @@
         grid-template-columns: 1fr;
     }
 }
+
+
+.wfs-toggle-create.is-hidden {
+    display: none;
+}
+
+.wfs-section-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.wfs-record-card.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18), 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.wfs-upload-label.is-disabled {
+    color: #94a3b8;
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    cursor: not-allowed;
+}
+
+#wfs-confirm-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+}
+
+#wfs-confirm-modal.is-visible {
+    display: flex;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+#wfs-confirm-modal .wfs-modal__backdrop {
+    position: absolute;
+    inset: 0;
+}
+
+#wfs-confirm-modal .wfs-modal__dialog {
+    position: relative;
+    background: #fff;
+    border-radius: 14px;
+    padding: 1.5rem;
+    width: min(90vw, 360px);
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+    display: flex;
+    gap: 1rem;
+}
+
+.wfs-modal__icon {
+    font-size: 1.75rem;
+}
+
+.wfs-modal__title {
+    margin: 0 0 0.35rem 0;
+    font-size: 1.05rem;
+    color: #1f2937;
+}
+
+.wfs-modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.wfs-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}

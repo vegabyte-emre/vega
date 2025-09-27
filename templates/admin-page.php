@@ -122,10 +122,13 @@ function wfs_format_phone_for_actions($phone)
         </div>
     </div>
 
-    <div class="wfs-add-record-section">
+    <div class="wfs-add-record-section" data-collapsed="false">
         <div class="wfs-section-title">
-            <h3>➕ Yeni Kayıt Oluştur</h3>
-            <button type="button" class="wfs-btn-link wfs-toggle-create" aria-expanded="true" aria-controls="wfs-create-record-form">Küçült</button>
+            <h3 id="wfs-create-record-heading" tabindex="0" role="button" aria-controls="wfs-create-record-form" aria-expanded="true">➕ Yeni Kayıt Oluştur</h3>
+            <div class="wfs-section-controls" role="group" aria-label="Yeni kayıt formunu göster veya gizle">
+                <button type="button" class="wfs-btn-link wfs-toggle-create" data-action="collapse" aria-controls="wfs-create-record-form" aria-expanded="true">Küçült</button>
+                <button type="button" class="wfs-btn-link wfs-toggle-create is-hidden" data-action="expand" aria-controls="wfs-create-record-form" aria-expanded="false">Genişlet</button>
+            </div>
         </div>
         <form id="wfs-create-record-form" enctype="multipart/form-data">
             <div class="wfs-form-grid">
@@ -250,6 +253,9 @@ function wfs_format_phone_for_actions($phone)
                 $categories_display = wfs_prepare_category_display($record->id, $grouped_files, $file_categories);
                 $phone_actions = wfs_format_phone_for_actions($record->phone);
                 $full_name = trim($record->first_name . ' ' . $record->last_name);
+                $can_manage_record = !empty($record->can_manage);
+                $can_review_record = current_user_can('manage_options') || current_user_can('wfs_review_files');
+                $can_upload_record = $can_manage_record || $can_review_record;
                 ?>
                 <div class="wfs-record-card"
                     data-record-id="<?php echo intval($record->id); ?>"
@@ -263,7 +269,9 @@ function wfs_format_phone_for_actions($phone)
                     data-job-title="<?php echo esc_attr($record->job_title); ?>"
                     data-age="<?php echo esc_attr($record->age); ?>"
                     data-status="<?php echo esc_attr($record->overall_status); ?>"
-                    data-can-manage="<?php echo !empty($record->can_manage) ? '1' : '0'; ?>">
+                    data-can-manage="<?php echo $can_manage_record ? '1' : '0'; ?>"
+                    data-can-review="<?php echo $can_review_record ? '1' : '0'; ?>"
+                    data-can-upload="<?php echo $can_upload_record ? '1' : '0'; ?>">
                     <div class="wfs-card-header">
                         <div class="wfs-card-select">
                             <input type="checkbox" class="wfs-bulk-checkbox" value="<?php echo intval($record->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Kaydı seç: %s', WFS_TEXT_DOMAIN), $full_name)); ?>">
@@ -340,16 +348,22 @@ function wfs_format_phone_for_actions($phone)
 
 <style>
 .wfs-add-record-section {
-    background: white;
-    padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(15, 23, 42, 0.08);
+    background: #ffffff;
+    padding: 1.75rem 2rem;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
     margin-bottom: 2rem;
+    transition: box-shadow 0.2s ease;
+}
+
+.wfs-add-record-section.is-collapsed {
+    padding-bottom: 1rem;
 }
 
 .wfs-section-title {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 1.5rem;
@@ -357,13 +371,46 @@ function wfs_format_phone_for_actions($phone)
 
 .wfs-section-title h3 {
     margin: 0;
-    font-size: 1.5rem;
-    color: #111827;
+    font-size: 1.25rem;
+    color: #1f2937;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.wfs-section-title h3:focus-visible {
+    outline: 2px solid #2563eb;
+    border-radius: 6px;
+    padding: 0 0.25rem;
+}
+
+.wfs-section-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .wfs-section-title p {
     margin: 0;
     color: #6b7280;
+}
+
+.wfs-toggle-create {
+    border: none;
+    background: transparent;
+    color: #2563eb;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+}
+
+.wfs-toggle-create:hover {
+    text-decoration: underline;
+}
+
+.wfs-toggle-create.is-hidden {
+    display: none;
 }
 
 .wfs-form-grid {
@@ -375,7 +422,7 @@ function wfs_format_phone_for_actions($phone)
 .wfs-form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.4rem;
 }
 
 .wfs-form-group label {
@@ -386,41 +433,17 @@ function wfs_format_phone_for_actions($phone)
 .wfs-form-group input,
 .wfs-form-group select {
     padding: 0.65rem 0.75rem;
-    border: 2px solid #e5e7eb;
+    border: 1px solid #d1d5db;
     border-radius: 8px;
     font-size: 0.95rem;
-    transition: all 0.2s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .wfs-form-group input:focus,
 .wfs-form-group select:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
-.wfs-form-group--full {
-    grid-column: 1 / -1;
-}
-
-.wfs-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    font-weight: 600;
-    color: #374151;
-}
-
-.wfs-files-upload {
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
-}
-
-.wfs-files-upload h4 {
-    margin: 0 0 1rem 0;
-    color: #111827;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .wfs-form-actions {
@@ -433,150 +456,27 @@ function wfs_format_phone_for_actions($phone)
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
-    padding: 0.75rem 1.5rem;
+    padding: 0.7rem 1.4rem;
     border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
+    border: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wfs-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
 }
 
 .wfs-btn-primary {
     background: linear-gradient(135deg, #2563eb, #10b981);
-    color: white;
-    border: none;
+    color: #fff;
 }
 
-.wfs-btn-primary:hover {
-    opacity: 0.9;
-}
-
-.wfs-contact-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0.5rem 0 0.25rem 0;
-}
-
-.wfs-contact-btn {
-    padding: 0.35rem 0.75rem;
+.wfs-btn-secondary {
     background: #e0f2fe;
     color: #0369a1;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.wfs-contact-btn:hover {
-    background: #bae6fd;
-}
-
-.wfs-user-meta {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    color: #4b5563;
-    font-size: 0.9rem;
-}
-
-.wfs-contact-text {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    font-size: 0.9rem;
-    color: #4b5563;
-}
-
-.wfs-doc-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: flex-end;
-}
-
-.wfs-doc-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.6rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border: 1px solid transparent;
-    transition: all 0.2s ease;
-}
-
-.wfs-doc-chip.is-ready {
-    background: rgba(34, 197, 94, 0.12);
-    color: #166534;
-    border-color: rgba(34, 197, 94, 0.2);
-}
-
-.wfs-doc-chip.is-missing {
-    background: rgba(248, 113, 113, 0.12);
-    color: #b91c1c;
-    border-color: rgba(248, 113, 113, 0.2);
-}
-
-.wfs-doc-icon {
-    font-size: 0.9rem;
-}
-
-.wfs-status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.9rem;
-    border-radius: 9999px;
-    font-weight: 600;
-    font-size: 0.85rem;
-    --wfs-status-color: #2563eb;
-}
-
-.wfs-status-light {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--wfs-status-color);
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25);
-    animation: wfs-pulse 2s ease-in-out infinite;
-}
-
-.wfs-add-record-section.is-collapsed form {
-    display: none;
-}
-
-.wfs-toggle-create {
-    border: none;
-    background: transparent;
-    color: #2563eb;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.wfs-toggle-create:hover {
-    text-decoration: underline;
-}
-
-.wfs-details-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-}
-
-.wfs-edit-record-form {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
-}
-
-.wfs-edit-form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1rem;
 }
 
 .wfs-btn-danger {
@@ -584,60 +484,478 @@ function wfs_format_phone_for_actions($phone)
     color: #fff;
 }
 
-.wfs-btn-danger:hover {
-    background: #dc2626;
+.wfs-btn-link {
+    background: none;
+    border: none;
+    color: #2563eb;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.2rem 0.35rem;
+}
+
+.wfs-btn-link:hover {
+    text-decoration: underline;
+}
+
+.wfs-records {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.wfs-record-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.wfs-record-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+}
+
+.wfs-record-card.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18), 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.wfs-card-header {
+    background: #f8fafc;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+}
+
+.wfs-card-select {
+    display: flex;
+    align-items: flex-start;
+    padding-top: 0.25rem;
+    cursor: pointer;
+}
+
+.wfs-card-select input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 2px solid #cbd5f5;
+}
+
+.wfs-user-info {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    flex: 1 1 auto;
+}
+
+.wfs-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.05rem;
+    box-shadow: 0 6px 14px rgba(59, 130, 246, 0.35);
+}
+
+.wfs-user-name {
+    margin: 0;
+    font-size: 1.15rem;
+    color: #0f172a;
+}
+
+.wfs-user-meta {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    color: #475569;
+    font-size: 0.88rem;
+}
+
+.wfs-contact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0.65rem 0 0.25rem;
+}
+
+.wfs-contact-btn {
+    padding: 0.35rem 0.7rem;
+    border-radius: 9999px;
+    background: #e0f2fe;
+    color: #0c4a6e;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.wfs-contact-btn:hover {
+    background: #bae6fd;
+    transform: translateY(-1px);
+}
+
+.wfs-contact-text {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.wfs-card-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.6rem;
+    min-width: 200px;
+}
+
+.wfs-doc-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.wfs-doc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(148, 163, 184, 0.12);
+    color: #475569;
+}
+
+.wfs-doc-chip.is-ready {
+    background: rgba(34, 197, 94, 0.14);
+    color: #166534;
+}
+
+.wfs-doc-chip.is-missing {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
+}
+
+.wfs-assignment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-weight: 600;
+    font-size: 0.78rem;
+}
+
+.wfs-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    --wfs-status-color: #2563eb;
+}
+
+.wfs-status-light {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--wfs-status-color);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25);
+    animation: wfs-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wfs-pulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+    50% { transform: scale(1.2); box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+}
+
+.wfs-record-details {
+    padding: 1.5rem;
+    background: #ffffff;
+}
+
+.wfs-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
+}
+
+.wfs-info-section {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border: 1px solid #e2e8f0;
+}
+
+.wfs-info-section h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: #1f2937;
+}
+
+.wfs-info-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+    color: #334155;
+}
+
+.wfs-documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.wfs-documents-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.wfs-documents-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 600;
+}
+
+.wfs-documents-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.85rem;
 }
 
 .wfs-documents-upload {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
 }
 
 .wfs-upload-label {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.4rem 0.8rem;
+    padding: 0.4rem 0.85rem;
     border: 1px dashed #c7d2fe;
-    border-radius: 8px;
+    border-radius: 10px;
     color: #3730a3;
     font-weight: 600;
     cursor: pointer;
     background: rgba(99, 102, 241, 0.08);
 }
 
-.wfs-upload-label input[type="file"] {
+.wfs-upload-label input[type='file'] {
     display: none;
 }
 
-@keyframes wfs-pulse {
-    0% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45);
-    }
-    50% {
-        transform: scale(1.2);
-        box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
-    }
-    100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45);
-    }
+.wfs-upload-label.is-disabled {
+    color: #94a3b8;
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    cursor: not-allowed;
+}
+
+.wfs-bulk-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1.25rem;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #eff6ff;
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-6px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.wfs-bulk-actions.is-active {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateY(0);
+}
+
+.wfs-bulk-checkbox {
+    width: 18px;
+    height: 18px;
+}
+
+.wfs-empty-state {
+    background: #f8fafc;
+    border: 1px dashed #cbd5f5;
+    border-radius: 14px;
+    padding: 2rem;
+    text-align: center;
+    color: #475569;
+}
+
+#wfs-confirm-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+}
+
+#wfs-confirm-modal.is-visible {
+    display: flex;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+#wfs-confirm-modal .wfs-modal__backdrop {
+    position: absolute;
+    inset: 0;
+}
+
+#wfs-confirm-modal .wfs-modal__dialog {
+    position: relative;
+    background: #fff;
+    border-radius: 14px;
+    padding: 1.5rem;
+    width: min(90vw, 360px);
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+    display: flex;
+    gap: 1rem;
+}
+
+.wfs-modal__icon {
+    font-size: 1.75rem;
+}
+
+.wfs-modal__title {
+    margin: 0 0 0.35rem 0;
+    font-size: 1.05rem;
+    color: #1f2937;
+}
+
+.wfs-modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.wfs-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+#wfs-toast-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 99999;
+}
+
+.wfs-toast {
+    background: #2563eb;
+    color: #fff;
+    padding: 0.75rem 1.1rem;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(37, 99, 235, 0.25);
+    font-weight: 600;
+}
+
+.wfs-toast.error {
+    background: #ef4444;
 }
 
 @media (max-width: 900px) {
     .wfs-card-header {
         flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
+        align-items: stretch;
     }
 
     .wfs-card-actions {
-        width: 100%;
         align-items: flex-start;
+        min-width: auto;
     }
 
     .wfs-doc-summary {
         justify-content: flex-start;
     }
 }
+
+@media (max-width: 640px) {
+    .wfs-add-record-section {
+        padding: 1.25rem;
+    }
+
+    .wfs-card-header {
+        padding: 1.1rem;
+    }
+
+    .wfs-user-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .wfs-contact-actions {
+        width: 100%;
+    }
+
+    .wfs-record-details {
+        padding: 1.1rem;
+    }
+
+    .wfs-details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .wfs-documents-grid {
+        grid-template-columns: 1fr;
+    }
+}
 </style>
+<div id="wfs-confirm-modal" class="wfs-modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="wfs-modal__backdrop" data-modal-dismiss></div>
+    <div class="wfs-modal__dialog" role="document">
+        <div class="wfs-modal__icon" aria-hidden="true">⚠️</div>
+        <div class="wfs-modal__body">
+            <h3 class="wfs-modal__title"><?php esc_html_e('Onay', WFS_TEXT_DOMAIN); ?></h3>
+            <p class="wfs-modal-message"><?php esc_html_e('Bu kaydı silmek istediğinize emin misiniz?', WFS_TEXT_DOMAIN); ?></p>
+            <div class="wfs-modal__actions">
+                <button type="button" class="wfs-btn wfs-btn-secondary wfs-modal-cancel"><?php esc_html_e('Vazgeç', WFS_TEXT_DOMAIN); ?></button>
+                <button type="button" class="wfs-btn wfs-btn-danger wfs-modal-confirm"><?php esc_html_e('Evet, sil', WFS_TEXT_DOMAIN); ?></button>
+            </div>
+        </div>
+    </div>
+</div>
+
