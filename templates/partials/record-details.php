@@ -16,6 +16,14 @@ $interview_label = $interview_required ? __('Evet', WFS_TEXT_DOMAIN) : __('Hayı
 $interview_date = $record->interview_at ? date_i18n('d.m.Y H:i', strtotime($record->interview_at)) : __('Belirtilmemiş', WFS_TEXT_DOMAIN);
 $payment_amount = floatval($record->payment_amount);
 $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ',', '.') : '';
+$education_levels = isset($education_levels) && is_array($education_levels) ? $education_levels : array(
+    __('Ortaokul', WFS_TEXT_DOMAIN),
+    __('Lise', WFS_TEXT_DOMAIN),
+    __('Önlisans', WFS_TEXT_DOMAIN),
+    __('Lisans', WFS_TEXT_DOMAIN),
+    __('Doktora', WFS_TEXT_DOMAIN),
+    __('Hiçbiri', WFS_TEXT_DOMAIN),
+);
 ?>
 <div class="wfs-record-details"
     data-record-id="<?php echo $record_id; ?>"
@@ -61,7 +69,19 @@ $payment_formatted = $payment_amount > 0 ? number_format($payment_amount, 2, ','
                 </div>
                 <div class="wfs-form-group">
                     <label><?php esc_html_e('Eğitim Durumu', WFS_TEXT_DOMAIN); ?></label>
-                    <input type="text" name="education_level" value="<?php echo esc_attr($record->education_level); ?>">
+                    <?php
+                    $current_education = (string) $record->education_level;
+                    $education_options = $education_levels;
+                    if ($current_education !== '' && !in_array($current_education, $education_options, true)) {
+                        array_unshift($education_options, $current_education);
+                        $education_options = array_values(array_unique($education_options));
+                    }
+                    ?>
+                    <select name="education_level">
+                        <?php foreach ($education_options as $option): ?>
+                            <option value="<?php echo esc_attr($option); ?>" <?php selected($current_education, $option); ?>><?php echo esc_html($option); ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <div class="wfs-form-group">
                     <label><?php esc_html_e('Bölüm', WFS_TEXT_DOMAIN); ?></label>

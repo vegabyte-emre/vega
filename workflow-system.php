@@ -24,6 +24,7 @@ define('WFS_TEXT_DOMAIN', 'eu-workflow');
 // Ana sınıf
 class WorkflowSystem {
     private $file_categories = array();
+    private $education_levels = array();
 
     private function user_has_full_access() {
         return current_user_can('manage_options') || current_user_can('wfs_manage_all');
@@ -52,6 +53,10 @@ class WorkflowSystem {
         }
 
         if ($this->user_has_full_access()) {
+            return true;
+        }
+
+        if (current_user_can('wfs_assign_records')) {
             return true;
         }
 
@@ -103,6 +108,15 @@ class WorkflowSystem {
             'sgk'        => array('label' => __('SGK Hizmet Dökümü', WFS_TEXT_DOMAIN), 'icon' => '📋'),
             'cv'         => array('label' => __('CV', WFS_TEXT_DOMAIN), 'icon' => '📄'),
             'other'      => array('label' => __('Diğer Belgeler', WFS_TEXT_DOMAIN), 'icon' => '📂'),
+        );
+
+        $this->education_levels = array(
+            __('Ortaokul', WFS_TEXT_DOMAIN),
+            __('Lise', WFS_TEXT_DOMAIN),
+            __('Önlisans', WFS_TEXT_DOMAIN),
+            __('Lisans', WFS_TEXT_DOMAIN),
+            __('Doktora', WFS_TEXT_DOMAIN),
+            __('Hiçbiri', WFS_TEXT_DOMAIN),
         );
     }
 
@@ -184,6 +198,10 @@ class WorkflowSystem {
 
     public function get_file_categories() {
         return $this->file_categories;
+    }
+
+    public function get_education_levels() {
+        return $this->education_levels;
     }
 
     private function normalize_search_terms($search) {
@@ -672,6 +690,7 @@ class WorkflowSystem {
             'nonce' => wp_create_nonce('wfs_nonce'),
             'statuses' => $this->get_status_settings(),
             'file_categories' => $this->get_file_categories(),
+            'education_levels' => $this->get_education_levels(),
             'can_assign' => current_user_can('manage_options') || current_user_can('wfs_assign_records'),
             'can_review' => current_user_can('manage_options') || current_user_can('wfs_review_files'),
             'filters_base_url' => esc_url(admin_url('admin.php?page=' . WFS_MENU_SLUG)),
@@ -1952,6 +1971,7 @@ class WorkflowSystem {
         $status_settings = $this->get_status_settings();
         $assignable_users = $this->get_assignable_users();
         $file_categories = $this->get_file_categories();
+        $education_levels = $this->get_education_levels();
 
         $search_term = isset($_GET['wfs_search']) ? sanitize_text_field(wp_unslash($_GET['wfs_search'])) : '';
         $status_filter = isset($_GET['wfs_status']) ? sanitize_key(wp_unslash($_GET['wfs_status'])) : '';

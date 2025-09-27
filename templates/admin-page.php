@@ -13,6 +13,14 @@ $active_filters = isset($active_filters) && is_array($active_filters)
     : array('search' => '', 'status' => '', 'rep' => 0);
 $can_assign_records = current_user_can('manage_options') || current_user_can('wfs_assign_records');
 $can_review_files = current_user_can('manage_options') || current_user_can('wfs_review_files');
+$education_levels = isset($education_levels) && is_array($education_levels) ? $education_levels : array(
+    __('Ortaokul', WFS_TEXT_DOMAIN),
+    __('Lise', WFS_TEXT_DOMAIN),
+    __('Önlisans', WFS_TEXT_DOMAIN),
+    __('Lisans', WFS_TEXT_DOMAIN),
+    __('Doktora', WFS_TEXT_DOMAIN),
+    __('Hiçbiri', WFS_TEXT_DOMAIN),
+);
 
 if (empty($status_settings)) {
     $status_settings = array(
@@ -86,12 +94,19 @@ function wfs_format_phone_for_actions($phone)
 ?>
 
 <div class="wrap">
-    <div class="wfs-header">
-        <div>
+<div class="wfs-header">
+    <div class="wfs-header-content">
+        <div class="wfs-header-text">
             <h1>Eu WorkFlow</h1>
             <p>Kayıt yönetimi, doküman kontrolü ve görüşme planlaması tek ekranda.</p>
         </div>
+        <div class="wfs-header-signature">
+            <span>Vegabyte Bilişim</span>
+            <span class="wfs-header-accent">✦</span>
+            <span>tarafından hazırlanmıştır</span>
+        </div>
     </div>
+</div>
 
     <div class="wfs-filters-container">
         <div class="wfs-filter-item wfs-filter-item--search">
@@ -154,7 +169,12 @@ function wfs_format_phone_for_actions($phone)
                 </div>
                 <div class="wfs-form-group">
                     <label>Eğitim Durumu</label>
-                    <input type="text" name="education_level">
+                    <select name="education_level">
+                        <option value=""><?php esc_html_e('Seçiniz', WFS_TEXT_DOMAIN); ?></option>
+                        <?php foreach ($education_levels as $level): ?>
+                            <option value="<?php echo esc_attr($level); ?>"><?php echo esc_html($level); ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <div class="wfs-form-group">
                     <label>Bölüm</label>
@@ -273,58 +293,64 @@ function wfs_format_phone_for_actions($phone)
                     data-can-review="<?php echo $can_review_record ? '1' : '0'; ?>"
                     data-can-upload="<?php echo $can_upload_record ? '1' : '0'; ?>">
                     <div class="wfs-card-header">
-                        <div class="wfs-card-select">
-                            <input type="checkbox" class="wfs-bulk-checkbox" value="<?php echo intval($record->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Kaydı seç: %s', WFS_TEXT_DOMAIN), $full_name)); ?>">
-                        </div>
-                        <div class="wfs-user-info">
-                            <div class="wfs-avatar" aria-hidden="true"><?php echo esc_html($initials ?: '👤'); ?></div>
-                            <div>
-                                <h3 class="wfs-user-name"><?php echo esc_html($full_name); ?></h3>
-                                <div class="wfs-user-meta">
-                                    <?php if (!empty($record->job_title)): ?>
-                                        <span>💼 <?php echo esc_html($record->job_title); ?></span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($record->department)): ?>
-                                        <span>🏢 <?php echo esc_html($record->department); ?></span>
-                                    <?php endif; ?>
+                        <div class="wfs-card-topline">
+                            <div class="wfs-card-select">
+                                <input type="checkbox" class="wfs-bulk-checkbox" value="<?php echo intval($record->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Kaydı seç: %s', WFS_TEXT_DOMAIN), $full_name)); ?>">
+                            </div>
+                            <div class="wfs-card-topmeta">
+                                <div class="wfs-assignment-chip">
+                                    <span class="wfs-assignment-icon" aria-hidden="true">🎯</span>
+                                    <span class="wfs-assignment-label"><?php echo $assigned_display; ?></span>
                                 </div>
-                                <div class="wfs-contact-actions">
-                                    <?php if ($phone_actions['tel']): ?>
-                                        <a href="<?php echo esc_url($phone_actions['tel']); ?>" class="wfs-contact-btn">Ara</a>
-                                    <?php endif; ?>
-                                    <?php if ($phone_actions['whatsapp']): ?>
-                                        <a href="<?php echo esc_url($phone_actions['whatsapp']); ?>" class="wfs-contact-btn" target="_blank" rel="noopener">WhatsApp</a>
-                                    <?php endif; ?>
-                                    <?php if (!empty($record->email)): ?>
-                                        <a href="mailto:<?php echo esc_attr($record->email); ?>" class="wfs-contact-btn">Mail</a>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="wfs-contact-text">
-                                    <?php if (!empty($record->phone)): ?><span>📞 <?php echo esc_html($record->phone); ?></span><?php endif; ?>
-                                    <?php if (!empty($record->email)): ?><span>📧 <?php echo esc_html($record->email); ?></span><?php endif; ?>
-                                </div>
+                                <span class="wfs-status-badge" style="--wfs-status-color: <?php echo esc_attr($status_config['color']); ?>; background: <?php echo esc_attr($status_config['bg']); ?>; color: <?php echo esc_attr($status_config['color']); ?>;">
+                                    <span class="wfs-status-light"></span>
+                                    <span class="wfs-status-text"><?php echo esc_html($status_config['label']); ?></span>
+                                </span>
                             </div>
                         </div>
-                        <div class="wfs-card-actions">
-                            <div class="wfs-doc-summary">
-                                <?php foreach ($categories_display as $category_slug => $category_data):
-                                    $has_file = !empty($category_data['files']);
-                                    ?>
-                                    <span class="wfs-doc-chip <?php echo $has_file ? 'is-ready' : 'is-missing'; ?>" data-category="<?php echo esc_attr($category_slug); ?>">
-                                        <span class="wfs-doc-icon" aria-hidden="true"><?php echo esc_html($category_data['meta']['icon']); ?></span>
-                                        <span class="wfs-doc-label"><?php echo esc_html($category_data['meta']['label']); ?></span>
-                                    </span>
-                                <?php endforeach; ?>
+                        <div class="wfs-card-body">
+                            <div class="wfs-user-info">
+                                <div class="wfs-avatar" aria-hidden="true"><?php echo esc_html($initials ?: '👤'); ?></div>
+                                <div>
+                                    <h3 class="wfs-user-name"><?php echo esc_html($full_name); ?></h3>
+                                    <div class="wfs-user-meta">
+                                        <?php if (!empty($record->job_title)): ?>
+                                            <span>💼 <?php echo esc_html($record->job_title); ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($record->department)): ?>
+                                            <span>🏢 <?php echo esc_html($record->department); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="wfs-contact-actions">
+                                        <?php if ($phone_actions['tel']): ?>
+                                            <a href="<?php echo esc_url($phone_actions['tel']); ?>" class="wfs-contact-btn">Ara</a>
+                                        <?php endif; ?>
+                                        <?php if ($phone_actions['whatsapp']): ?>
+                                            <a href="<?php echo esc_url($phone_actions['whatsapp']); ?>" class="wfs-contact-btn" target="_blank" rel="noopener">WhatsApp</a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($record->email)): ?>
+                                            <a href="mailto:<?php echo esc_attr($record->email); ?>" class="wfs-contact-btn">Mail</a>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="wfs-contact-text">
+                                        <?php if (!empty($record->phone)): ?><span>📞 <?php echo esc_html($record->phone); ?></span><?php endif; ?>
+                                        <?php if (!empty($record->email)): ?><span>📧 <?php echo esc_html($record->email); ?></span><?php endif; ?>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="wfs-assignment-chip">
-                                <span class="wfs-assignment-icon" aria-hidden="true">🎯</span>
-                                <span class="wfs-assignment-label"><?php echo $assigned_display; ?></span>
+                            <div class="wfs-card-actions">
+                                <div class="wfs-doc-summary">
+                                    <?php foreach ($categories_display as $category_slug => $category_data):
+                                        $has_file = !empty($category_data['files']);
+                                        ?>
+                                        <span class="wfs-doc-chip <?php echo $has_file ? 'is-ready' : 'is-missing'; ?>" data-category="<?php echo esc_attr($category_slug); ?>">
+                                            <span class="wfs-doc-icon" aria-hidden="true"><?php echo esc_html($category_data['meta']['icon']); ?></span>
+                                            <span class="wfs-doc-label"><?php echo esc_html($category_data['meta']['label']); ?></span>
+                                        </span>
+                                    <?php endforeach; ?>
+                                </div>
+                                <button class="wfs-btn-link wfs-toggle-details" data-record-id="<?php echo intval($record->id); ?>">Detaylar</button>
                             </div>
-                            <span class="wfs-status-badge" style="--wfs-status-color: <?php echo esc_attr($status_config['color']); ?>; background: <?php echo esc_attr($status_config['bg']); ?>; color: <?php echo esc_attr($status_config['color']); ?>;">
-                                <span class="wfs-status-light"></span>
-                                <span class="wfs-status-text"><?php echo esc_html($status_config['label']); ?></span>
-                            </span>
-                            <button class="wfs-btn-link wfs-toggle-details" data-record-id="<?php echo intval($record->id); ?>">Detaylar</button>
                         </div>
                     </div>
 
@@ -941,6 +967,116 @@ function wfs_format_phone_for_actions($phone)
 
     .wfs-documents-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* overrides */
+.wfs-header h1 {
+    color: #fff;
+}
+
+.wfs-header p {
+    color: rgba(255, 255, 255, 0.9);
+    margin: 0;
+}
+
+.wfs-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.wfs-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.wfs-header-signature {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.wfs-header-accent {
+    color: #22c55e;
+    font-size: 1.1em;
+}
+
+.wfs-card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.wfs-card-topline {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.wfs-card-topmeta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+.wfs-card-body {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.wfs-card-actions {
+    align-items: flex-end;
+    gap: 0.9rem;
+}
+
+@media (max-width: 900px) {
+    .wfs-card-actions {
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .wfs-card-body {
+        align-items: flex-start;
+    }
+}
+
+@media (max-width: 600px) {
+    .wfs-header-signature {
+        margin-left: 0;
+    }
+
+    .wfs-card-topline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .wfs-card-topmeta {
+        margin-left: 0;
+    }
+
+    .wfs-card-actions {
+        align-items: flex-start;
+    }
+
+    .wfs-doc-summary {
+        justify-content: flex-start;
     }
 }
 </style>

@@ -16,6 +16,20 @@
     background-size: 200% 200%;
 }
 
+.wfs-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.wfs-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
 @keyframes wfs-gradient {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
@@ -26,6 +40,30 @@
     margin: 0 0 0.5rem 0;
     font-size: 2.4rem;
     font-weight: 700;
+    color: #fff;
+}
+
+.wfs-header p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.wfs-header-signature {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.wfs-header-accent {
+    color: #22c55e;
+    font-size: 1.1em;
 }
 
 /* Filters */
@@ -122,9 +160,30 @@
     padding: 1.5rem;
     border-bottom: 1px solid #e5e7eb;
     display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.wfs-card-topline {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.wfs-card-topmeta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+.wfs-card-body {
+    display: flex;
     justify-content: space-between;
-    align-items: flex-start;
     gap: 1.5rem;
+    flex-wrap: wrap;
 }
 
 .wfs-card-select {
@@ -209,7 +268,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.75rem;
+    gap: 0.9rem;
 }
 
 .wfs-doc-summary {
@@ -1045,7 +1104,10 @@
 /* Responsive */
 @media (max-width: 900px) {
     .wfs-card-header {
-        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .wfs-card-body {
         align-items: flex-start;
     }
 
@@ -1081,6 +1143,28 @@
 }
 
 @media (max-width: 600px) {
+    .wfs-header-signature {
+        margin-left: 0;
+    }
+
+    .wfs-card-topline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .wfs-card-topmeta {
+        margin-left: 0;
+    }
+
+    .wfs-card-actions {
+        align-items: flex-start;
+    }
+
+    .wfs-doc-summary {
+        justify-content: flex-start;
+    }
+
     .wfs-details-grid {
         grid-template-columns: 1fr;
     }

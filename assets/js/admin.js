@@ -16,6 +16,7 @@ jQuery(document).ready(function($) {
     const $confirmModal = $('#wfs-confirm-modal');
     const statusMap = wfs_ajax.statuses || {};
     const fileCategories = wfs_ajax.file_categories || {};
+    const educationLevels = Array.isArray(wfs_ajax.education_levels) ? wfs_ajax.education_levels.filter(Boolean) : [];
     const hasI18n = typeof window !== 'undefined' && window.wp && wp.i18n && typeof wp.i18n.__ === 'function';
     const textDomain = wfs_ajax.text_domain || 'eu-workflow';
     const __ = (text, fallback) => hasI18n ? wp.i18n.__(text, textDomain) : (fallback !== undefined ? fallback : text);
@@ -40,6 +41,15 @@ jQuery(document).ready(function($) {
 
         const focusOnOpen = options.focus === true;
         $createSection.toggleClass('is-collapsed', collapsed).attr('data-collapsed', collapsed ? 'true' : 'false');
+
+        const $form = $createSection.find('form').first();
+        if ($form.length) {
+            if (collapsed) {
+                $form.attr('hidden', 'hidden').attr('aria-hidden', 'true');
+            } else {
+                $form.removeAttr('hidden').attr('aria-hidden', 'false');
+            }
+        }
 
         if ($createCollapseButton.length) {
             $createCollapseButton.toggleClass('is-hidden', collapsed).attr('aria-expanded', collapsed ? 'false' : 'true');
@@ -214,19 +224,6 @@ jQuery(document).ready(function($) {
         }
     }
 
-    function toggleCreateSection() {
-        if (!$createSection.length) {
-            return;
-        }
-
-        $createSection.toggleClass('is-collapsed');
-        const collapsed = $createSection.hasClass('is-collapsed');
-        if ($toggleCreate.length) {
-            $toggleCreate.attr('aria-expanded', collapsed ? 'false' : 'true');
-            $toggleCreate.text(collapsed ? __('Genişlet', 'Genişlet') : __('Küçült', 'Küçült'));
-        }
-    }
-
     function renderSuggestions(items) {
         if (!items || !items.length) {
             hideSuggestions();
@@ -333,6 +330,34 @@ jQuery(document).ready(function($) {
             `);
         });
         return chips.join('');
+    }
+
+    function buildEducationOptions(selectedValue) {
+        const normalized = (selectedValue || '').toString();
+        const seen = new Set();
+        const options = [];
+
+        if (normalized) {
+            seen.add(normalized);
+            options.push(normalized);
+        }
+
+        educationLevels.forEach((level) => {
+            const label = (level || '').toString();
+            if (!label || seen.has(label)) {
+                return;
+            }
+            seen.add(label);
+            options.push(label);
+        });
+
+        if (options.length === 0) {
+            return `<option value="">${escapeHtml(__('Seçiniz', 'Seçiniz'))}</option>`;
+        }
+
+        return options.map((option) => `
+            <option value="${escapeHtml(option)}" ${option === normalized ? 'selected' : ''}>${escapeHtml(option)}</option>
+        `).join('');
     }
 
     function renderDocumentsDetails(record, filesByCategory, canReview, canUpload) {
@@ -447,7 +472,9 @@ jQuery(document).ready(function($) {
                     </div>
                     <div class="wfs-form-group">
                         <label>${escapeHtml(__('Eğitim Durumu', 'Eğitim Durumu'))}</label>
-                        <input type="text" name="education_level" value="${escapeHtml(record.education_level || '')}">
+                        <select name="education_level">
+                            ${buildEducationOptions(record.education_level || '')}
+                        </select>
                     </div>
                     <div class="wfs-form-group">
                         <label>${escapeHtml(__('Bölüm', 'Bölüm'))}</label>
@@ -594,35 +621,41 @@ jQuery(document).ready(function($) {
                 data-can-review="${canReview ? '1' : '0'}"
                 data-can-upload="${canUpload ? '1' : '0'}">
                 <div class="wfs-card-header">
-                    <div class="wfs-card-select">
-                        <input type="checkbox" class="wfs-bulk-checkbox" value="${record.id}" aria-label="${escapeHtml(`${__('Kaydı seç', 'Kaydı seç')}: ${name}`)}">
-                    </div>
-                    <div class="wfs-user-info">
-                        <div class="wfs-avatar" aria-hidden="true">${escapeHtml(initials || '👤')}</div>
-                        <div>
-                            <h3 class="wfs-user-name">${escapeHtml(name)}</h3>
-                            <div class="wfs-user-meta">
-                                ${record.job_title ? `<span>💼 ${escapeHtml(record.job_title)}</span>` : ''}
-                                ${record.department ? `<span>🏢 ${escapeHtml(record.department)}</span>` : ''}
+                    <div class="wfs-card-topline">
+                        <div class="wfs-card-select">
+                            <input type="checkbox" class="wfs-bulk-checkbox" value="${record.id}" aria-label="${escapeHtml(`${__('Kaydı seç', 'Kaydı seç')}: ${name}`)}">
+                        </div>
+                        <div class="wfs-card-topmeta">
+                            <div class="wfs-assignment-chip">
+                                <span class="wfs-assignment-icon" aria-hidden="true">🎯</span>
+                                <span class="wfs-assignment-label">${assigned}</span>
                             </div>
-                            <div class="wfs-contact-actions">${contactButtons.join('')}</div>
-                            <div class="wfs-contact-text">
-                                ${record.phone ? `<span>📞 ${escapeHtml(record.phone)}</span>` : ''}
-                                ${record.email ? `<span>📧 ${escapeHtml(record.email)}</span>` : ''}
-                            </div>
+                            <span class="wfs-status-badge" style="--wfs-status-color: ${status.color}; background: ${status.bg}; color: ${status.color};">
+                                <span class="wfs-status-light"></span>
+                                <span class="wfs-status-text">${escapeHtml(status.label)}</span>
+                            </span>
                         </div>
                     </div>
-                    <div class="wfs-card-actions">
-                        <div class="wfs-doc-summary">${renderDocChips(filesByCategory)}</div>
-                        <div class="wfs-assignment-chip">
-                            <span class="wfs-assignment-icon" aria-hidden="true">🎯</span>
-                            <span class="wfs-assignment-label">${assigned}</span>
+                    <div class="wfs-card-body">
+                        <div class="wfs-user-info">
+                            <div class="wfs-avatar" aria-hidden="true">${escapeHtml(initials || '👤')}</div>
+                            <div>
+                                <h3 class="wfs-user-name">${escapeHtml(name)}</h3>
+                                <div class="wfs-user-meta">
+                                    ${record.job_title ? `<span>💼 ${escapeHtml(record.job_title)}</span>` : ''}
+                                    ${record.department ? `<span>🏢 ${escapeHtml(record.department)}</span>` : ''}
+                                </div>
+                                <div class="wfs-contact-actions">${contactButtons.join('')}</div>
+                                <div class="wfs-contact-text">
+                                    ${record.phone ? `<span>📞 ${escapeHtml(record.phone)}</span>` : ''}
+                                    ${record.email ? `<span>📧 ${escapeHtml(record.email)}</span>` : ''}
+                                </div>
+                            </div>
                         </div>
-                        <span class="wfs-status-badge" style="--wfs-status-color: ${status.color}; background: ${status.bg}; color: ${status.color};">
-                            <span class="wfs-status-light"></span>
-                            <span class="wfs-status-text">${escapeHtml(status.label)}</span>
-                        </span>
-                        <button class="wfs-btn-link wfs-toggle-details" data-record-id="${record.id}">${escapeHtml(__('Detaylar', 'Detaylar'))}</button>
+                        <div class="wfs-card-actions">
+                            <div class="wfs-doc-summary">${renderDocChips(filesByCategory)}</div>
+                            <button class="wfs-btn-link wfs-toggle-details" data-record-id="${record.id}">${escapeHtml(__('Detaylar', 'Detaylar'))}</button>
+                        </div>
                     </div>
                 </div>
                 <div class="wfs-record-details" data-record-id="${record.id}" data-status="${escapeHtml(record.overall_status)}" data-first-name="${escapeHtml(record.first_name || '')}" data-last-name="${escapeHtml(record.last_name || '')}" data-email="${escapeHtml(record.email || '')}" data-phone="${escapeHtml(record.phone || '')}" data-education="${escapeHtml(record.education_level || '')}" data-department="${escapeHtml(record.department || '')}" data-job-title="${escapeHtml(record.job_title || '')}" data-age="${escapeHtml(record.age || '')}" data-can-manage="${canManage ? '1' : '0'}" data-can-review="${canReview ? '1' : '0'}" data-can-upload="${canUpload ? '1' : '0'}" style="display: none;">
