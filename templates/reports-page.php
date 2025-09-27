@@ -2,18 +2,22 @@
 // templates/reports-page.php
 if (!defined('ABSPATH')) exit;
 
+if (!function_exists('is_plugin_active')) {
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
 global $wpdb;
 
 // İstatistikleri hesapla
-$total_records = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records");
-$pending_records = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'pending'");
-$approved_records = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'approved'");
-$rejected_records = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'rejected'");
+$total_records   = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records");
+$pending_records = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'pending'");
+$approved_records = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'approved'");
+$rejected_records = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_records WHERE overall_status = 'rejected'");
 
-$total_files = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files");
-$pending_files = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'pending'");
-$approved_files = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'approved'");
-$rejected_files = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'rejected'");
+$total_files   = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files");
+$pending_files = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'pending'");
+$approved_files = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'approved'");
+$rejected_files = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}wfs_files WHERE status = 'rejected'");
 
 // Son kayıtlar
 $recent_records = $wpdb->get_results("
@@ -78,14 +82,14 @@ $recent_records = $wpdb->get_results("
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; margin-bottom: 2rem;">
         <!-- Dosya İstatistikleri -->
         <div style="background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
             <h3 style="margin: 0 0 1.5rem 0; font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
                 📁 Dosya İnceleme Durumu
             </h3>
             
-            <div style="space-y: 1.5rem;">
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #f8fafc; border-radius: 8px;">
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <div style="width: 32px; height: 32px; background: #ddd6fe; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
@@ -156,25 +160,48 @@ $recent_records = $wpdb->get_results("
             </h3>
 
             <?php if (!empty($recent_records)): ?>
-                <div style="space-y: 1rem;">
-                    <?php foreach ($recent_records as $record): ?>
-                        <?php 
-                        $status_colors = array(
-                            'pending' => '#f59e0b',
-                            'approved' => '#10b981', 
-                            'rejected' => '#ef4444'
-                        );
+                <?php
+                $status_colors = array(
+                    'pending'    => '#f59e0b',
+                    'processing' => '#3b82f6',
+                    'approved'   => '#10b981',
+                    'rejected'   => '#ef4444',
+                    'completed'  => '#8b5cf6',
+                );
+
+                $status_labels = array(
+                    'pending'    => 'Beklemede',
+                    'processing' => 'İşleniyor',
+                    'approved'   => 'Onaylı',
+                    'rejected'   => 'Reddedildi',
+                    'completed'  => 'Tamamlandı',
+                );
+                ?>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <?php foreach ($recent_records as $record):
+                        $status_key   = !empty($record->overall_status) ? $record->overall_status : 'pending';
+                        $status_color = $status_colors[$status_key] ?? '#64748b';
+                        $status_label = $status_labels[$status_key] ?? ucfirst($status_key);
+                        $full_name    = trim(($record->first_name ?? '') . ' ' . ($record->last_name ?? ''));
+                        if ($full_name === '') {
+                            $full_name = !empty($record->email) ? $record->email : 'İsimsiz Kayıt';
+                        }
+                        $created_at   = !empty($record->created_at) ? strtotime($record->created_at) : false;
                         ?>
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid #e5e7eb; border-radius: 8px;">
                             <div>
-                                <div style="font-weight: 600;"><?php echo esc_html($record->first_name . ' ' . $record->last_name); ?></div>
-                                <div style="font-size: 0.875rem; color: #6b7280;"><?php echo esc_html($record->email); ?></div>
-                                <div style="font-size: 0.75rem; color: #9ca3af;"><?php echo date('d.m.Y H:i', strtotime($record->created_at)); ?></div>
+                                <div style="font-weight: 600;"><?php echo esc_html($full_name); ?></div>
+                                <?php if (!empty($record->email)): ?>
+                                    <div style="font-size: 0.875rem; color: #6b7280;"><?php echo esc_html($record->email); ?></div>
+                                <?php endif; ?>
+                                <?php if ($created_at): ?>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;"><?php echo esc_html(date_i18n('d.m.Y H:i', $created_at)); ?></div>
+                                <?php endif; ?>
                             </div>
                             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                <div style="width: 8px; height: 8px; background: <?php echo $status_colors[$record->overall_status]; ?>; border-radius: 50%;"></div>
-                                <span style="font-size: 0.875rem; color: <?php echo $status_colors[$record->overall_status]; ?>; font-weight: 500;">
-                                    <?php echo $record->overall_status == 'pending' ? 'Beklemede' : ($record->overall_status == 'approved' ? 'Onaylı' : 'Reddedildi'); ?>
+                                <div style="width: 8px; height: 8px; background: <?php echo esc_attr($status_color); ?>; border-radius: 50%;"></div>
+                                <span style="font-size: 0.875rem; color: <?php echo esc_attr($status_color); ?>; font-weight: 500;">
+                                    <?php echo esc_html($status_label); ?>
                                 </span>
                             </div>
                         </div>
@@ -199,11 +226,11 @@ $recent_records = $wpdb->get_results("
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
             <div style="display: flex; justify-content: space-between; padding: 1rem; background: #f0f9ff; border-radius: 8px;">
                 <span style="font-weight: 500;">WordPress</span>
-                <span style="color: #0369a1;"><?php echo get_bloginfo('version'); ?></span>
+                <span style="color: #0369a1;"><?php echo esc_html(get_bloginfo('version')); ?></span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 1rem; background: #f0f9ff; border-radius: 8px;">
                 <span style="font-weight: 500;">PHP</span>
-                <span style="color: #0369a1;"><?php echo PHP_VERSION; ?></span>
+                <span style="color: #0369a1;"><?php echo esc_html(PHP_VERSION); ?></span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 1rem; background: <?php echo is_plugin_active('fluentform/fluentform.php') ? '#f0fdf4' : '#fef2f2'; ?>; border-radius: 8px;">
                 <span style="font-weight: 500;">FluentForms</span>
@@ -235,14 +262,14 @@ $recent_records = $wpdb->get_results("
 <script>
 function exportReport() {
     const csvContent = 'İş Akışı Raporu\n\n' +
-        'Toplam Kayıt,<?php echo $total_records; ?>\n' +
-        'Bekleyen,<?php echo $pending_records; ?>\n' +
-        'Onaylı,<?php echo $approved_records; ?>\n' +
-        'Reddedilen,<?php echo $rejected_records; ?>\n' +
-        'Toplam Dosya,<?php echo $total_files; ?>\n' +
-        'Bekleyen Dosya,<?php echo $pending_files; ?>\n' +
-        'Onaylı Dosya,<?php echo $approved_files; ?>\n' +
-        'Reddedilen Dosya,<?php echo $rejected_files; ?>\n' +
+        'Toplam Kayıt,<?php echo absint($total_records); ?>\n' +
+        'Bekleyen,<?php echo absint($pending_records); ?>\n' +
+        'Onaylı,<?php echo absint($approved_records); ?>\n' +
+        'Reddedilen,<?php echo absint($rejected_records); ?>\n' +
+        'Toplam Dosya,<?php echo absint($total_files); ?>\n' +
+        'Bekleyen Dosya,<?php echo absint($pending_files); ?>\n' +
+        'Onaylı Dosya,<?php echo absint($approved_files); ?>\n' +
+        'Reddedilen Dosya,<?php echo absint($rejected_files); ?>\n' +
         '\nRapor Tarihi,' + new Date().toLocaleDateString('tr-TR');
 
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
